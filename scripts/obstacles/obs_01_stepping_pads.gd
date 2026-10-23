@@ -1,7 +1,15 @@
 class_name ObstacleSteppingPads
 extends ObstacleBase
 
-## OBS-01: Stepping Pads / Jump Gap obstacle with configurable pad count, size, gap, and height variation.
+## OBS-01: Stepping Pads / Jump Gap obstacle with configurable pad count, size, gap, height variation, and lateral offset.
+
+const ALLOWED_KEYS: Array[String] = [
+	"pad_count",
+	"pad_dimensions",
+	"gap_distance",
+	"height_variation",
+	"lateral_offset",
+]
 
 @export_range(1, 12, 1) var pad_count: int = 4
 @export var pad_dimensions: Vector3 = Vector3(1.8, 0.4, 1.8)
@@ -20,7 +28,20 @@ func _init() -> void:
 	display_name = "Stepping Pads"
 
 
+func get_pad_bodies() -> Array[StaticBody3D]:
+	var bodies: Array[StaticBody3D] = []
+	if _pads_container == null:
+		_pads_container = get_node_or_null("PadsContainer") as Node3D
+	if _pads_container == null:
+		return bodies
+	for child: Node in _pads_container.get_children():
+		if child is StaticBody3D:
+			bodies.append(child as StaticBody3D)
+	return bodies
+
+
 func _rebuild_obstacle() -> void:
+	_cache_common_nodes()
 	if _pads_container == null:
 		_pads_container = get_node_or_null("PadsContainer") as Node3D
 	if _pads_container == null:
@@ -28,7 +49,7 @@ func _rebuild_obstacle() -> void:
 
 	for child: Node in _pads_container.get_children():
 		_pads_container.remove_child(child)
-		child.queue_free()
+		child.free()
 
 	if _pad_material == null:
 		_pad_material = StandardMaterial3D.new()
@@ -49,6 +70,7 @@ func _rebuild_obstacle() -> void:
 		pad_body.position = Vector3(x_pos, y_pos, z_pos)
 
 		var mesh_inst: MeshInstance3D = MeshInstance3D.new()
+		mesh_inst.name = "MeshInstance3D"
 		var box_mesh: BoxMesh = BoxMesh.new()
 		box_mesh.size = pad_dimensions
 		box_mesh.material = _pad_material
@@ -56,6 +78,7 @@ func _rebuild_obstacle() -> void:
 		pad_body.add_child(mesh_inst)
 
 		var col_shape: CollisionShape3D = CollisionShape3D.new()
+		col_shape.name = "CollisionShape3D"
 		var box_shape: BoxShape3D = BoxShape3D.new()
 		box_shape.size = pad_dimensions
 		col_shape.shape = box_shape
@@ -64,24 +87,49 @@ func _rebuild_obstacle() -> void:
 		_pads_container.add_child(pad_body)
 
 	var total_span: float = float(pad_count) * step_z + gap_distance
+	if entry_anchor != null:
+		entry_anchor.position = Vector3.ZERO
 	if exit_anchor != null:
 		exit_anchor.position = Vector3(0.0, 0.0, -total_span)
+	if _entry_trigger != null:
+		_entry_trigger.position = Vector3(0.0, 1.2, -0.8)
+	if _exit_trigger != null:
+		_exit_trigger.position = Vector3(0.0, 1.2, -total_span - 0.4)
+	if _hazard_zone != null:
+		_hazard_zone.position = Vector3(0.0, -2.2, -total_span * 0.5)
+		var hz_col: CollisionShape3D = _hazard_zone.get_node_or_null("CollisionShape3D") as CollisionShape3D
+		if hz_col != null and hz_col.shape is BoxShape3D:
+			var hz_box: BoxShape3D = (hz_col.shape as BoxShape3D).duplicate() as BoxShape3D
+			hz_box.size = Vector3(maxf(10.0, pad_dimensions.x + lateral_offset * 2.0 + 4.0), 1.5, total_span + 2.0)
+			hz_col.shape = hz_box
 
 
 func _validate_parameters() -> bool:
-	if not is_finite(gap_distance) or not is_finite(height_variation) or not is_finite(lateral_offset):
+	return _is_valid_config(pad_count, pad_dimensions, gap_distance, height_variation, lateral_offset)
+
+
+static func _is_valid_config(
+	count: int,
+	dims: Vector3,
+	gap: float,
+	h_var: float,
+	lat_offset: float
+) -> bool:
+	if not is_finite(gap) or not is_finite(h_var) or not is_finite(lat_offset):
 		return false
-	if pad_count < 1 or pad_count > 12:
+	if not is_finite(dims.x) or not is_finite(dims.y) or not is_finite(dims.z):
 		return false
-	if pad_dimensions.x < 0.4 or pad_dimensions.y < 0.1 or pad_dimensions.z < 0.4:
+	if count < 1 or count > 12:
 		return false
-	if pad_dimensions.x > 8.0 or pad_dimensions.y > 4.0 or pad_dimensions.z > 8.0:
+	if dims.x < 0.4 or dims.y < 0.1 or dims.z < 0.4:
 		return false
-	if gap_distance < 0.2 or gap_distance > 4.0:
+	if dims.x > 8.0 or dims.y > 4.0 or dims.z > 8.0:
 		return false
-	if absf(height_variation) > 1.2:
+	if gap < 0.2 or gap > 4.0:
 		return false
-	if lateral_offset < 0.0 or lateral_offset > 2.0:
+	if absf(h_var) > 1.2:
+		return false
+	if lat_offset < 0.0 or lat_offset > 2.0:
 		return false
 	return true
 
@@ -97,38 +145,33 @@ func _get_obstacle_parameters() -> Dictionary:
 
 
 func _apply_obstacle_parameters(params: Dictionary) -> bool:
-	var next_count: int = int(params.get("pad_count", pad_count))
-	var next_gap: float = float(params.get("gap_distance", gap_distance))
-	var next_height_var: float = float(params.get("height_variation", height_variation))
-	var next_lateral: float = float(params.get("lateral_offset", lateral_offset))
-	var next_dims: Vector3 = pad_dimensions
-	if params.has("pad_dimensions"):
-		var raw_dims: Variant = params["pad_dimensions"]
-		if raw_dims is Vector3:
-			next_dims = raw_dims
-		elif raw_dims is Array and (raw_dims as Array).size() == 3:
-			var arr: Array = raw_dims as Array
-			next_dims = Vector3(float(arr[0]), float(arr[1]), float(arr[2]))
-		else:
-			return false
+	if not _has_only_known_keys(params, ALLOWED_KEYS):
+		return false
 
-	var prev_count: int = pad_count
-	var prev_dims: Vector3 = pad_dimensions
-	var prev_gap: float = gap_distance
-	var prev_hvar: float = height_variation
-	var prev_lat: float = lateral_offset
+	var parsed: Dictionary = {}
+	if not _read_strict_int(params, "pad_count", pad_count, parsed):
+		return false
+	if not _read_strict_vec3(params, "pad_dimensions", pad_dimensions, parsed):
+		return false
+	if not _read_strict_float(params, "gap_distance", gap_distance, parsed):
+		return false
+	if not _read_strict_float(params, "height_variation", height_variation, parsed):
+		return false
+	if not _read_strict_float(params, "lateral_offset", lateral_offset, parsed):
+		return false
+
+	var next_count: int = int(parsed["pad_count"])
+	var next_dims: Vector3 = parsed["pad_dimensions"] as Vector3
+	var next_gap: float = float(parsed["gap_distance"])
+	var next_hvar: float = float(parsed["height_variation"])
+	var next_lat: float = float(parsed["lateral_offset"])
+
+	if not _is_valid_config(next_count, next_dims, next_gap, next_hvar, next_lat):
+		return false
 
 	pad_count = next_count
 	pad_dimensions = next_dims
 	gap_distance = next_gap
-	height_variation = next_height_var
-	lateral_offset = next_lateral
-
-	if not _validate_parameters():
-		pad_count = prev_count
-		pad_dimensions = prev_dims
-		gap_distance = prev_gap
-		height_variation = prev_hvar
-		lateral_offset = prev_lat
-		return false
+	height_variation = next_hvar
+	lateral_offset = next_lat
 	return true

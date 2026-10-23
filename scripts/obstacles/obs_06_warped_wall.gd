@@ -3,6 +3,12 @@ extends ObstacleBase
 
 ## OBS-06: Curved segmented Warped Wall traversable via sprint + jump onto the upper summit deck.
 
+const ALLOWED_KEYS: Array[String] = [
+	"wall_height",
+	"wall_width",
+	"curve_profile",
+]
+
 @export_range(2.0, 5.5, 0.2) var wall_height: float = 3.2
 @export_range(2.0, 6.0, 0.2) var wall_width: float = 3.6
 @export_range(0.6, 1.8, 0.1) var curve_profile: float = 1.0
@@ -24,7 +30,16 @@ func _init() -> void:
 	display_name = "Warped Wall"
 
 
+func get_top_deck_body() -> StaticBody3D:
+	if _geometry_root == null:
+		_geometry_root = get_node_or_null("GeometryRoot") as Node3D
+	if _geometry_root == null:
+		return null
+	return _geometry_root.get_node_or_null("TopDeck") as StaticBody3D
+
+
 func _rebuild_obstacle() -> void:
+	_cache_common_nodes()
 	if _geometry_root == null:
 		_geometry_root = get_node_or_null("GeometryRoot") as Node3D
 	if _geometry_root == null:
@@ -32,7 +47,7 @@ func _rebuild_obstacle() -> void:
 
 	for child: Node in _geometry_root.get_children():
 		_geometry_root.remove_child(child)
-		child.queue_free()
+		child.free()
 
 	if _ramp_material == null:
 		_ramp_material = StandardMaterial3D.new()
@@ -82,6 +97,7 @@ func _rebuild_obstacle() -> void:
 	# 3. Summit platform at the top of the Warped Wall
 	var top_start_z: float = curve_start_z - curve_span_z
 	var top_center_z: float = top_start_z - (TOP_DECK_LENGTH * 0.5)
+	var exit_z: float = top_start_z - TOP_DECK_LENGTH
 	_create_slab(
 		"TopDeck",
 		Vector3(wall_width, SLAB_THICKNESS, TOP_DECK_LENGTH),
@@ -90,8 +106,16 @@ func _rebuild_obstacle() -> void:
 		_top_material
 	)
 
+	if entry_anchor != null:
+		entry_anchor.position = Vector3.ZERO
 	if exit_anchor != null:
-		exit_anchor.position = Vector3(0.0, wall_height, top_start_z - TOP_DECK_LENGTH)
+		exit_anchor.position = Vector3(0.0, wall_height, exit_z)
+	if _entry_trigger != null:
+		_entry_trigger.position = Vector3(0.0, 1.2, -0.6)
+	if _exit_trigger != null:
+		_exit_trigger.position = Vector3(0.0, wall_height + 1.2, top_center_z)
+	if _hazard_zone != null:
+		_hazard_zone.position = Vector3(0.0, -2.2, exit_z * 0.5)
 
 
 func _create_slab(
@@ -109,6 +133,7 @@ func _create_slab(
 	body.rotation = Vector3(pitch_rad, 0.0, 0.0)
 
 	var mesh_inst: MeshInstance3D = MeshInstance3D.new()
+	mesh_inst.name = "MeshInstance3D"
 	var box_mesh: BoxMesh = BoxMesh.new()
 	box_mesh.size = dims
 	box_mesh.material = mat
@@ -116,6 +141,7 @@ func _create_slab(
 	body.add_child(mesh_inst)
 
 	var col: CollisionShape3D = CollisionShape3D.new()
+	col.name = "CollisionShape3D"
 	var box_shape: BoxShape3D = BoxShape3D.new()
 	box_shape.size = dims
 	col.shape = box_shape
@@ -125,13 +151,17 @@ func _create_slab(
 
 
 func _validate_parameters() -> bool:
-	if not is_finite(wall_height) or not is_finite(wall_width) or not is_finite(curve_profile):
+	return _is_valid_config(wall_height, wall_width, curve_profile)
+
+
+static func _is_valid_config(height: float, width: float, profile: float) -> bool:
+	if not is_finite(height) or not is_finite(width) or not is_finite(profile):
 		return false
-	if wall_height < 1.8 or wall_height > 6.0:
+	if height < 1.8 or height > 6.0:
 		return false
-	if wall_width < 1.5 or wall_width > 8.0:
+	if width < 1.5 or width > 8.0:
 		return false
-	if curve_profile < 0.5 or curve_profile > 2.2:
+	if profile < 0.5 or profile > 2.2:
 		return false
 	return true
 
@@ -145,21 +175,25 @@ func _get_obstacle_parameters() -> Dictionary:
 
 
 func _apply_obstacle_parameters(params: Dictionary) -> bool:
-	var next_hgt: float = float(params.get("wall_height", wall_height))
-	var next_wid: float = float(params.get("wall_width", wall_width))
-	var next_crv: float = float(params.get("curve_profile", curve_profile))
+	if not _has_only_known_keys(params, ALLOWED_KEYS):
+		return false
 
-	var prev_hgt: float = wall_height
-	var prev_wid: float = wall_width
-	var prev_crv: float = curve_profile
+	var parsed: Dictionary = {}
+	if not _read_strict_float(params, "wall_height", wall_height, parsed):
+		return false
+	if not _read_strict_float(params, "wall_width", wall_width, parsed):
+		return false
+	if not _read_strict_float(params, "curve_profile", curve_profile, parsed):
+		return false
+
+	var next_hgt: float = float(parsed["wall_height"])
+	var next_wid: float = float(parsed["wall_width"])
+	var next_crv: float = float(parsed["curve_profile"])
+
+	if not _is_valid_config(next_hgt, next_wid, next_crv):
+		return false
 
 	wall_height = next_hgt
 	wall_width = next_wid
 	curve_profile = next_crv
-
-	if not _validate_parameters():
-		wall_height = prev_hgt
-		wall_width = prev_wid
-		curve_profile = prev_crv
-		return false
 	return true
