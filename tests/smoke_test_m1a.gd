@@ -160,13 +160,16 @@ func _run_contract_and_state_checks() -> void:
 	_assert_true(session.run_id != first_run_id, "10b. Retry generates a new unique run_id")
 	_assert_true(not hud.is_result_visible(), "10c. Retry hides result overlay")
 
-	# 8 & 12. FINISHED cannot transition to FAILED and cannot duplicate completion
+	# 8 & 12. FINISHED requires ordered obstacle completion, cannot transition to FAILED, and cannot duplicate completion
 	_completed_signal_count = 0
 	session.start_run()
 	session.tick(0.75, false)
+	for obs: ObstacleBase in stage_obstacles:
+		_main_node._on_stage_obstacle_entered(obs, 0, stage_obstacles.size())
+		_main_node._on_stage_obstacle_completed(obs, 0, stage_obstacles.size())
 	_main_node._on_finish_zone_reached(player)
 	_main_node._on_finish_zone_reached(player)
-	_assert_true(session.state == RunSession.RunState.FINISHED, "8. Finish trigger transitions to FINISHED")
+	_assert_true(session.state == RunSession.RunState.FINISHED, "8. Finish trigger transitions to FINISHED after all 6 obstacles cleared")
 	_assert_true(hud.is_result_visible() and hud.get_result_banner_text() == "STAGE CLEAR", "8b. HUD shows STAGE CLEAR")
 	_assert_true(not session.fail_run("Late fail"), "8c. FINISHED cannot transition to FAILED")
 	_assert_true(_completed_signal_count == 1, "12. Duplicate finish trigger only completes once")
@@ -189,6 +192,9 @@ func _run_contract_and_state_checks() -> void:
 	var pendulum: ObstacleSwingingPendulum = stage_obstacles[4] as ObstacleSwingingPendulum
 	_assert_true(moving_plat != null and sweeper != null and pendulum != null, "11a. Dynamic obstacles cast cleanly")
 	if moving_plat != null and sweeper != null and pendulum != null:
+		moving_plat.start_simulation()
+		sweeper.start_simulation()
+		pendulum.start_simulation()
 		moving_plat._physics_process(0.8)
 		sweeper._physics_process(0.8)
 		pendulum._physics_process(0.8)
