@@ -56,6 +56,7 @@ var _override_jump: bool = false
 
 func _ready() -> void:
 	_base_gravity = float(ProjectSettings.get_setting("physics/3d/default_gravity", 9.8))
+	floor_max_angle = deg_to_rad(50.0)
 	_was_on_floor = is_on_floor()
 	if _camera_rig != null:
 		_camera_rig.set_follow_target(self)

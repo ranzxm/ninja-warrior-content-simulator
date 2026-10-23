@@ -1,0 +1,58 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/obstacles/obs_03_moving_platform.gd" id="1_obs03"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_mplat"]
+albedo_color = Color(0.24, 0.78, 0.54, 1)
+roughness = 0.65
+
+[sub_resource type="BoxMesh" id="BoxMesh_mplat"]
+material = SubResource("StandardMaterial3D_mplat")
+size = Vector3(2.8, 0.4, 2.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_mplat"]
+size = Vector3(2.8, 0.4, 2.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_entry"]
+size = Vector3(3.5, 2.5, 1.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hazard"]
+size = Vector3(10, 1.5, 10)
+
+[node name="Obs03MovingPlatform" type="Node3D"]
+script = ExtResource("1_obs03")
+
+[node name="EntryAnchor" type="Marker3D" parent="."]
+
+[node name="ExitAnchor" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -8)
+
+[node name="PlatformBody" type="AnimatableBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, -1.7)
+collision_layer = 5
+collision_mask = 0
+sync_to_physics = false
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="PlatformBody"]
+mesh = SubResource("BoxMesh_mplat")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PlatformBody"]
+shape = SubResource("BoxShape3D_mplat")
+
+[node name="EntryTrigger" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, -0.8)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EntryTrigger"]
+shape = SubResource("BoxShape3D_entry")
+
+[node name="HazardZone" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.2, -4)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HazardZone"]
+shape = SubResource("BoxShape3D_hazard")

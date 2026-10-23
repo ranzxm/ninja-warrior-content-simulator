@@ -1,0 +1,113 @@
+[gd_scene load_steps=13 format=3]
+
+[ext_resource type="Script" path="res://scripts/obstacles/obs_04_rotating_sweeper.gd" id="1_obs04"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_deck"]
+albedo_color = Color(0.32, 0.36, 0.44, 1)
+roughness = 0.8
+
+[sub_resource type="BoxMesh" id="BoxMesh_deck"]
+material = SubResource("StandardMaterial3D_deck")
+size = Vector3(3.6, 0.4, 7)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_deck"]
+size = Vector3(3.6, 0.4, 7)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_arm"]
+albedo_color = Color(0.92, 0.24, 0.24, 1)
+roughness = 0.5
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_post"]
+material = SubResource("StandardMaterial3D_arm")
+top_radius = 0.22
+bottom_radius = 0.25
+height = 1.0
+radial_segments = 12
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_post"]
+radius = 0.25
+height = 1.0
+
+[sub_resource type="BoxMesh" id="BoxMesh_arm"]
+material = SubResource("StandardMaterial3D_arm")
+size = Vector3(4, 0.28, 0.28)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_arm"]
+size = Vector3(4, 0.28, 0.28)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_push"]
+size = Vector3(4, 0.34, 0.42)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_entry"]
+size = Vector3(3.6, 2.5, 1.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hazard"]
+size = Vector3(12, 1.5, 9)
+
+[node name="Obs04RotatingSweeper" type="Node3D"]
+script = ExtResource("1_obs04")
+
+[node name="EntryAnchor" type="Marker3D" parent="."]
+
+[node name="ExitAnchor" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -7)
+
+[node name="DeckBody" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, -3.5)
+collision_layer = 5
+collision_mask = 0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="DeckBody"]
+mesh = SubResource("BoxMesh_deck")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DeckBody"]
+shape = SubResource("BoxShape3D_deck")
+
+[node name="SweeperPivot" type="AnimatableBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -3.5)
+collision_layer = 5
+collision_mask = 0
+sync_to_physics = false
+
+[node name="PostMesh" type="MeshInstance3D" parent="SweeperPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+mesh = SubResource("CylinderMesh_post")
+
+[node name="PostCollision" type="CollisionShape3D" parent="SweeperPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("CylinderShape3D_post")
+
+[node name="ArmMesh" type="MeshInstance3D" parent="SweeperPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.52, 0)
+mesh = SubResource("BoxMesh_arm")
+
+[node name="ArmCollision" type="CollisionShape3D" parent="SweeperPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.52, 0)
+shape = SubResource("BoxShape3D_arm")
+
+[node name="ArmPushArea" type="Area3D" parent="SweeperPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.52, 0)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="SweeperPivot/ArmPushArea"]
+shape = SubResource("BoxShape3D_push")
+
+[node name="EntryTrigger" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, -0.8)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EntryTrigger"]
+shape = SubResource("BoxShape3D_entry")
+
+[node name="HazardZone" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.2, -3.5)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HazardZone"]
+shape = SubResource("BoxShape3D_hazard")

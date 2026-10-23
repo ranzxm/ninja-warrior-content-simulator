@@ -1,0 +1,245 @@
+[gd_scene load_steps=26 format=3]
+
+[ext_resource type="Script" path="res://scripts/arena/stage_demo_arena.gd" id="1_stage"]
+[ext_resource type="PackedScene" path="res://scenes/obstacles/obs_01_stepping_pads.tscn" id="2_obs01"]
+[ext_resource type="PackedScene" path="res://scenes/obstacles/obs_02_balance_beam.tscn" id="3_obs02"]
+[ext_resource type="PackedScene" path="res://scenes/obstacles/obs_03_moving_platform.tscn" id="4_obs03"]
+[ext_resource type="PackedScene" path="res://scenes/obstacles/obs_04_rotating_sweeper.tscn" id="5_obs04"]
+[ext_resource type="PackedScene" path="res://scenes/obstacles/obs_05_swinging_pendulum.tscn" id="6_obs05"]
+[ext_resource type="PackedScene" path="res://scenes/obstacles/obs_06_warped_wall.tscn" id="7_obs06"]
+
+[sub_resource type="Environment" id="Environment_stage"]
+background_mode = 1
+background_color = Color(0.11, 0.15, 0.22, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.7, 0.76, 0.84, 1)
+ambient_light_energy = 0.78
+tonemap_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_start"]
+albedo_color = Color(0.16, 0.56, 0.34, 1)
+roughness = 0.8
+
+[sub_resource type="BoxMesh" id="BoxMesh_start"]
+material = SubResource("StandardMaterial3D_start")
+size = Vector3(5, 0.4, 4)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_start"]
+size = Vector3(5, 0.4, 4)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_deck"]
+albedo_color = Color(0.28, 0.32, 0.38, 1)
+roughness = 0.85
+
+[sub_resource type="BoxMesh" id="BoxMesh_deck"]
+material = SubResource("StandardMaterial3D_deck")
+size = Vector3(4, 0.4, 3)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_deck"]
+size = Vector3(4, 0.4, 3)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_finish"]
+albedo_color = Color(0.88, 0.64, 0.14, 1)
+roughness = 0.6
+
+[sub_resource type="BoxMesh" id="BoxMesh_finish"]
+material = SubResource("StandardMaterial3D_finish")
+size = Vector3(5, 0.4, 5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_finish"]
+size = Vector3(5, 0.4, 5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_gate"]
+albedo_color = Color(0.2, 0.85, 0.45, 1)
+roughness = 0.5
+
+[sub_resource type="BoxMesh" id="BoxMesh_pillar"]
+material = SubResource("StandardMaterial3D_gate")
+size = Vector3(0.3, 2.6, 0.3)
+
+[sub_resource type="BoxMesh" id="BoxMesh_finish_pillar"]
+material = SubResource("StandardMaterial3D_finish")
+size = Vector3(0.35, 3, 0.35)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_start_gate"]
+size = Vector3(5, 2.6, 0.8)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_finish_zone"]
+size = Vector3(4.6, 2.8, 3.6)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_fail_zone"]
+size = Vector3(80, 1.5, 110)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_water"]
+albedo_color = Color(0.08, 0.22, 0.36, 1)
+roughness = 0.4
+
+[sub_resource type="BoxMesh" id="BoxMesh_water"]
+material = SubResource("StandardMaterial3D_water")
+size = Vector3(60, 0.2, 100)
+
+[node name="Stage01Demo" type="Node3D"]
+script = ExtResource("1_stage")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_stage")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.383022, 0.321394, 0, 0.642788, 0.766044, -0.5, -0.663414, 0.55667, 0, 18, 0)
+light_energy = 1.15
+shadow_enabled = true
+directional_shadow_mode = 0
+
+[node name="SpawnPoint" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.4)
+
+[node name="StartPlatform" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 2)
+collision_layer = 1
+collision_mask = 0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="StartPlatform"]
+mesh = SubResource("BoxMesh_start")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StartPlatform"]
+shape = SubResource("BoxShape3D_start")
+
+[node name="StartPillarLeft" type="MeshInstance3D" parent="StartPlatform"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.2, 1.5, -1.8)
+mesh = SubResource("BoxMesh_pillar")
+
+[node name="StartPillarRight" type="MeshInstance3D" parent="StartPlatform"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.2, 1.5, -1.8)
+mesh = SubResource("BoxMesh_pillar")
+
+[node name="StartGate" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.3, 0.2)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StartGate"]
+shape = SubResource("BoxShape3D_start_gate")
+
+[node name="ConnectorDecks" type="Node3D" parent="."]
+
+[node name="Deck01" type="StaticBody3D" parent="ConnectorDecks"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, -12.7)
+collision_layer = 1
+collision_mask = 0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="ConnectorDecks/Deck01"]
+mesh = SubResource("BoxMesh_deck")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ConnectorDecks/Deck01"]
+shape = SubResource("BoxShape3D_deck")
+
+[node name="Deck02" type="StaticBody3D" parent="ConnectorDecks"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, -22.7)
+collision_layer = 1
+collision_mask = 0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="ConnectorDecks/Deck02"]
+mesh = SubResource("BoxMesh_deck")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ConnectorDecks/Deck02"]
+shape = SubResource("BoxShape3D_deck")
+
+[node name="Deck03" type="StaticBody3D" parent="ConnectorDecks"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, -33.7)
+collision_layer = 1
+collision_mask = 0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="ConnectorDecks/Deck03"]
+mesh = SubResource("BoxMesh_deck")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ConnectorDecks/Deck03"]
+shape = SubResource("BoxShape3D_deck")
+
+[node name="Deck04" type="StaticBody3D" parent="ConnectorDecks"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, -43.7)
+collision_layer = 1
+collision_mask = 0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="ConnectorDecks/Deck04"]
+mesh = SubResource("BoxMesh_deck")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ConnectorDecks/Deck04"]
+shape = SubResource("BoxShape3D_deck")
+
+[node name="Deck05" type="StaticBody3D" parent="ConnectorDecks"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, -53.7)
+collision_layer = 1
+collision_mask = 0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="ConnectorDecks/Deck05"]
+mesh = SubResource("BoxMesh_deck")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ConnectorDecks/Deck05"]
+shape = SubResource("BoxShape3D_deck")
+
+[node name="Obstacles" type="Node3D" parent="."]
+
+[node name="Obs01SteppingPads" parent="Obstacles" instance=ExtResource("2_obs01")]
+obstacle_id = "obs_01_stepping_pads"
+
+[node name="Obs02BalanceBeam" parent="Obstacles" instance=ExtResource("3_obs02")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -14.2)
+obstacle_id = "obs_02_balance_beam"
+
+[node name="Obs03MovingPlatform" parent="Obstacles" instance=ExtResource("4_obs03")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -24.2)
+obstacle_id = "obs_03_moving_platform"
+
+[node name="Obs04RotatingSweeper" parent="Obstacles" instance=ExtResource("5_obs04")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -35.2)
+obstacle_id = "obs_04_rotating_sweeper"
+
+[node name="Obs05SwingingPendulum" parent="Obstacles" instance=ExtResource("6_obs05")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -45.2)
+obstacle_id = "obs_05_swinging_pendulum"
+
+[node name="Obs06WarpedWall" parent="Obstacles" instance=ExtResource("7_obs06")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -55.2)
+obstacle_id = "obs_06_warped_wall"
+
+[node name="FinishPlatform" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, -68.3)
+collision_layer = 1
+collision_mask = 0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="FinishPlatform"]
+mesh = SubResource("BoxMesh_finish")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FinishPlatform"]
+shape = SubResource("BoxShape3D_finish")
+
+[node name="FinishPillarLeft" type="MeshInstance3D" parent="FinishPlatform"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.1, 1.7, 0)
+mesh = SubResource("BoxMesh_finish_pillar")
+
+[node name="FinishPillarRight" type="MeshInstance3D" parent="FinishPlatform"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.1, 1.7, 0)
+mesh = SubResource("BoxMesh_finish_pillar")
+
+[node name="FinishZone" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.5, -68.3)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FinishZone"]
+shape = SubResource("BoxShape3D_finish_zone")
+
+[node name="FailZone" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.2, -35)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FailZone"]
+shape = SubResource("BoxShape3D_fail_zone")
+
+[node name="HazardBasinVisual" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.35, -35)
+mesh = SubResource("BoxMesh_water")

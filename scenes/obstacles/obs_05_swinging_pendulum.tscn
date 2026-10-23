@@ -1,0 +1,112 @@
+[gd_scene load_steps=13 format=3]
+
+[ext_resource type="Script" path="res://scripts/obstacles/obs_05_swinging_pendulum.gd" id="1_obs05"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_walk"]
+albedo_color = Color(0.35, 0.39, 0.46, 1)
+roughness = 0.8
+
+[sub_resource type="BoxMesh" id="BoxMesh_walk"]
+material = SubResource("StandardMaterial3D_walk")
+size = Vector3(2.2, 0.4, 7)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_walk"]
+size = Vector3(2.2, 0.4, 7)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rod"]
+albedo_color = Color(0.62, 0.66, 0.72, 1)
+roughness = 0.5
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_rod"]
+material = SubResource("StandardMaterial3D_rod")
+top_radius = 0.08
+bottom_radius = 0.08
+height = 3.2
+radial_segments = 10
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_bob"]
+albedo_color = Color(0.95, 0.42, 0.14, 1)
+roughness = 0.45
+
+[sub_resource type="SphereMesh" id="SphereMesh_bob"]
+material = SubResource("StandardMaterial3D_bob")
+radius = 0.55
+height = 1.1
+radial_segments = 16
+rings = 8
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_bob"]
+radius = 0.55
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_hit"]
+radius = 0.65
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_entry"]
+size = Vector3(3.2, 2.5, 1.5)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hazard"]
+size = Vector3(12, 1.5, 9)
+
+[node name="Obs05SwingingPendulum" type="Node3D"]
+script = ExtResource("1_obs05")
+
+[node name="EntryAnchor" type="Marker3D" parent="."]
+
+[node name="ExitAnchor" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -7)
+
+[node name="WalkwayBody" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, -3.5)
+collision_layer = 5
+collision_mask = 0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="WalkwayBody"]
+mesh = SubResource("BoxMesh_walk")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="WalkwayBody"]
+shape = SubResource("BoxShape3D_walk")
+
+[node name="PendulumPivot" type="AnimatableBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.1, -3.5)
+collision_layer = 5
+collision_mask = 0
+sync_to_physics = false
+
+[node name="RodMesh" type="MeshInstance3D" parent="PendulumPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.6, 0)
+mesh = SubResource("CylinderMesh_rod")
+
+[node name="BobMesh" type="MeshInstance3D" parent="PendulumPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3.2, 0)
+mesh = SubResource("SphereMesh_bob")
+
+[node name="BobCollision" type="CollisionShape3D" parent="PendulumPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3.2, 0)
+shape = SubResource("SphereShape3D_bob")
+
+[node name="BobHitArea" type="Area3D" parent="PendulumPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -3.2, 0)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="PendulumPivot/BobHitArea"]
+shape = SubResource("SphereShape3D_hit")
+
+[node name="EntryTrigger" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, -0.8)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="EntryTrigger"]
+shape = SubResource("BoxShape3D_entry")
+
+[node name="HazardZone" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -2.2, -3.5)
+collision_layer = 8
+collision_mask = 2
+monitorable = false
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="HazardZone"]
+shape = SubResource("BoxShape3D_hazard")
