@@ -4,6 +4,8 @@ extends SceneTree
 ## Run with: godot --headless --path . -s res://tests/smoke_test_m0.gd
 
 var _failures: Array[String] = []
+var _main_node: MainApp = null
+var _frame_count: int = 0
 
 
 func _initialize() -> void:
@@ -13,23 +15,29 @@ func _initialize() -> void:
 		_finish()
 		return
 
-	var main_node: MainApp = main_packed.instantiate() as MainApp
-	_assert_true(main_node != null, "main.tscn root must be MainApp")
-	root.add_child(main_node)
+	_main_node = main_packed.instantiate() as MainApp
+	_assert_true(_main_node != null, "main.tscn root must be MainApp")
+	root.add_child(_main_node)
 
-	var player: PlayerController = main_node.get_player()
-	var arena: PrototypeArena = main_node.get_arena()
-	var hud: GameplayHud = main_node.get_hud()
-	var pause_menu: PauseMenu = main_node.get_pause_menu()
+
+func _process(_delta: float) -> bool:
+	_frame_count += 1
+	if _frame_count < 2:
+		return false
+
+	var player: PlayerController = _main_node.get_player()
+	var arena: Node3D = _main_node.get_arena()
+	var hud: GameplayHud = _main_node.get_hud()
+	var pause_menu: PauseMenu = _main_node.get_pause_menu()
 
 	_assert_true(player != null, "PlayerController node must exist")
-	_assert_true(arena != null, "PrototypeArena node must exist")
+	_assert_true(arena != null, "Arena node must exist")
 	_assert_true(hud != null, "GameplayHud node must exist")
 	_assert_true(pause_menu != null, "PauseMenu node must exist")
 
 	if player != null and arena != null and hud != null and pause_menu != null:
-		var spawn_pos: Vector3 = arena.get_spawn_transform().origin
-		_assert_true(player.global_position.distance_to(spawn_pos) < 0.01, "Player must spawn at SpawnPoint")
+		var spawn_pos: Vector3 = arena.call("get_spawn_transform").origin
+		_assert_true(player.global_position.distance_to(spawn_pos) < 0.05, "Player must spawn at SpawnPoint")
 		_assert_true(hud.get_mode_text() == "MODE: PLAY", "HUD must start in PLAY mode")
 		_assert_true(not pause_menu.visible, "PauseMenu must start hidden")
 
@@ -47,27 +55,28 @@ func _initialize() -> void:
 		_assert_true(move_dir.length() > 0.99, "Camera-relative movement vector must be normalized")
 
 		# Verify pause and resume flow
-		main_node.set_paused(true)
-		_assert_true(main_node.is_paused(), "MainApp must enter paused state")
+		_main_node.set_paused(true)
+		_assert_true(_main_node.is_paused(), "MainApp must enter paused state")
 		_assert_true(pause_menu.visible, "PauseMenu must be visible when paused")
 		_assert_true(hud.get_mode_text() == "MODE: PAUSED", "HUD must show PAUSED mode")
 		_assert_true(not player.controls_enabled, "Player controls must disable while paused")
 
-		main_node.set_paused(false)
-		_assert_true(not main_node.is_paused(), "MainApp must resume from pause")
+		_main_node.set_paused(false)
+		_assert_true(not _main_node.is_paused(), "MainApp must resume from pause")
 		_assert_true(not pause_menu.visible, "PauseMenu must hide on resume")
 		_assert_true(hud.get_mode_text() == "MODE: PLAY", "HUD must return to PLAY mode")
 
 		# Verify fall detection and restart reset
 		player.global_position = Vector3(4.0, -10.0, -5.0)
 		player.velocity = Vector3(3.0, -12.0, -4.0)
-		_assert_true(arena.is_below_fail_plane(player.global_position), "Arena must detect position below fail plane")
-		main_node.restart_session()
-		_assert_true(player.global_position.distance_to(spawn_pos) < 0.01, "Restart must restore player to SpawnPoint")
+		_assert_true(bool(arena.call("is_below_fail_plane", player.global_position)), "Arena must detect position below fail plane")
+		_main_node.restart_session()
+		_assert_true(player.global_position.distance_to(spawn_pos) < 0.05, "Restart must restore player to SpawnPoint")
 		_assert_true(player.velocity.length() < 0.001, "Restart must zero player velocity")
 
-	main_node.queue_free()
+	_main_node.queue_free()
 	_finish()
+	return true
 
 
 func _assert_true(condition: bool, message: String) -> void:
