@@ -1,4 +1,4 @@
-# TEST PLAN — Ninja Warrior Content Simulator (M0–M1a)
+# TEST PLAN — Ninja Warrior Content Simulator (M0–M1a Stabilized)
 
 ## 1. Pemeriksaan Otomatis (Headless CLI)
 
@@ -8,47 +8,46 @@ Dijalankan menggunakan binary resmi `Godot_v4.7.2-stable_win64_console.exe`:
    ```powershell
    Godot_v4.7.2-stable_win64_console.exe --headless --editor --path . --quit
    ```
-   - **Status Eksekusi:** **PASS** (Exit code `0`, seluruh class global dan scene terdaftar tanpa parse error).
+   - **Hasil:** **PASS** (Exit code `0`).
 
 2. **Automated Smoke Test M0 (`tests/smoke_test_m0.gd`):**
    ```powershell
    Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/smoke_test_m0.gd
    ```
-   - **Status Eksekusi:** **PASS** (`SMOKE_TEST_M0: PASS`, exit code `0`).
+   - **Hasil:** **PASS** (`SMOKE_TEST_M0: PASS`, exit code `0`).
 
-3. **Automated Smoke & Physics Test M1a (`tests/smoke_test_m1a.gd`):**
+3. **Automated Smoke Test M1a (`tests/smoke_test_m1a.gd`):**
    ```powershell
    Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/smoke_test_m1a.gd
    ```
-   - **Status Eksekusi:** **PASS** (`SMOKE_TEST_M1A: PASS`, exit code `0`).
-   - **Cakupan Terverifikasi (15 kategori):**
-     1. `main.tscn` dan `StageDemoArena` dimuat dengan benar.
-     2. Keenam prefab rintangan (`obs_01` s/d `obs_06`) dapat diinstansiasi secara independen.
-     3. Seluruh rintangan memiliki `obstacle_id`, `obstacle_type`, `EntryAnchor`, dan `ExitAnchor` valid.
-     4. State `READY` menginisialisasi timer `00:00.000` dan `run_id` unik.
-     5. State `RUNNING` menjalankan timer sesuai delta fisika.
-     6. Timer berhenti bertambah saat `is_paused == true`.
-     7. State `FAILED` menolak transisi ke `FINISHED` dan tidak me-respawn karakter secara instan.
-     8. State `FINISHED` menolak transisi ke `FAILED`.
-     9. State `TIMEOUT` terpicu tepat satu kali saat melewati `time_limit_sec`.
-     10. Retry mengembalikan state ke `READY` dengan `run_id` baru dan menyembunyikan layar hasil.
-     11. Retry me-reset state dinamis `MovingPlatform`, `RotatingSweeper`, dan `SwingingPendulum`.
-     12. Pemicu `FinishZone` ganda tidak menimbulkan sinyal selesai ganda.
-     13. Parameter konfigurasi rintangan yang invalid ditolak dengan aman (`apply_parameters` mengembalikan `false`).
-     14. Fitur M0 (clean feed `H`, pause menu, `prototype_arena.tscn`) tetap utuh.
-     15. Simulasi fisika multi-frame: `MovingPlatform` membawa player yang berdiri di atasnya, `RotatingSweeper` dan `SwingingPendulum` mendorong player saat terjadi kontak, dan player berhasil menaiki `WarpedWall` (sprint + jump) hingga ke `TopDeck` (`y >= 3.1m`).
+   - **Hasil:** **PASS** (`SMOKE_TEST_M1A: PASS`, exit code `0`).
 
-## 2. Prosedur Pengujian Manual Golden Path (M1a)
+4. **Stabilization & Regression Suite (`tests/smoke_test_m1a_stabilization.gd`):**
+   ```powershell
+   Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/smoke_test_m1a_stabilization.gd
+   ```
+   - **Hasil:** **PASS** (`SMOKE_TEST_M1A_STABILIZATION: PASS (200 checks passed)`, exit code `0`).
+   - **Cakupan Grup A–F (44 Kasus Uji):**
+     - **Group A (1–8):** Siklus `READY`, `StartGate` tunggal, pemulihan jatuh saat `READY`, timer saat `RUNNING`/`PAUSED`/terminal, penolakan transisi invalid, dan retry dengan `run_id` baru.
+     - **Group B (9–16):** Pemisahan `ENTERED` (`[IN PROGRESS]`) vs `COMPLETED` (`[CLEARED]`), penolakan exit tanpa entry, penolakan duplikasi exit/re-entry, penolakan urutan loncat rintangan, penolakan `FinishZone` dini, penolakan finish jika rintangan wajib dinonaktifkan, dan penyelesaian penuh 6 rintangan berurutan.
+     - **Group C (17–21):** Penonaktifan (`is_enabled = false`) mematikan visual, simulasi, trigger `Area3D`, dan kolisi fisik (terverifikasi lewat `PhysicsDirectSpaceState3D.intersect_ray`), serta pemulihan penuh setelah siklus enable/disable berulang.
+     - **Group D (22–28):** Round-trip JSON (`get_parameters() -> JSON -> apply_parameters()`) untuk keenam tipe rintangan, penolakan tipe salah, nilai di luar batas, `NaN`, key tidak dikenal, jaminan pembaruan atomik tanpa mutasi parsial, serta konsistensi ukuran mesh, collider, dan anchor.
+     - **Group E (29–36):** Simulasi fisika multi-frame (`MovingPlatform` membawa player, `RotatingSweeper` dan `SwingingPendulum` mendorong player, `WarpedWall` dapat dinaiki ke `TopDeck`), pembekuan rintangan dinamis di `READY`/terminal, dan determinisme fase setelah reset.
+     - **Group F (37–44):** Regresi M0 (WASD relatif kamera, sprint, jump, clamp kamera, pause/resume, restart, clean feed `H`, dan ketersediaan `prototype_arena.tscn`).
 
-| ID | Target Uji | Langkah Uji Manual | Hasil yang Diharapkan |
-|---|---|---|---|
-| M1A-01 | StartGate & Timer | Jalankan game (F5), maju keluar dari `StartPlatform` melewati pilar hijau `StartGate` | Status berubah `READY` -> `RUNNING`, timer mulai berjalan. |
-| M1A-02 | OBS-01 Stepping Pads | Lompati 4 pad biru secara berurutan menuju Deck 01 | HUD menampilkan `OBSTACLE: Stepping Pads (1/6)`; lompatan mendarat stabil di tiap pad. |
-| M1A-03 | OBS-02 Balance Beam | Berjalan/sprint lurus di atas balok kuning sempit menuju Deck 02 | HUD menampilkan `OBSTACLE: Balance Beam (2/6)`; collider balok stabil. |
-| M1A-04 | OBS-03 Moving Platform | Tunggu platform hijau mendekat, lompat ke atasnya, biarkan terbawa ke Deck 03 | HUD menampilkan `OBSTACLE: Moving Platform (3/6)`; karakter ikut bergerak bersama platform tanpa selip. |
-| M1A-05 | OBS-04 Rotating Sweeper | Maju ke dek sweeper, lompati palang merah yang berputar (`Space`) menuju Deck 04 | HUD menampilkan `OBSTACLE: Rotating Sweeper (4/6)`; palang mendorong karakter jika tertabrak dan dapat dilompati. |
-| M1A-06 | OBS-05 Swinging Pendulum | Amati ayunan bandul oranye, lewati jembatan saat bandul mengayun ke samping menuju Deck 05 | HUD menampilkan `OBSTACLE: Swinging Pendulum (5/6)`; bandul menggeser karakter jika bersentuhan. |
-| M1A-07 | OBS-06 Warped Wall | Tahan `Left Shift + W` di landasan pacu biru, tekan `Space` saat menaiki kurva atas untuk mendarat di dek puncak emas | HUD menampilkan `OBSTACLE: Warped Wall (6/6)`; karakter berhasil naik ke `TopDeck` (`y = 3.2m`). |
-| M1A-08 | Finish Volume | Masuk ke antara dua pilar emas di `FinishPlatform` | Status berubah ke `FINISHED`, timer berhenti, muncul panel `STAGE CLEAR` beserta waktu tempuh dan tombol `Retry (R)`. |
-| M1A-09 | Fall Failure & Retry | Sengaja jatuh dari rintangan mana pun ke area bawah, lalu tekan `R` atau klik `Retry (R)` | Saat jatuh: muncul panel `FAILED` beserta alasan dan karakter tidak langsung respawn. Saat `R` ditekan: seluruh rintangan, timer, dan karakter kembali ke `READY` di `StartPlatform`. |
-| M1A-10 | Clean Feed (`H`) | Tekan `H` saat `RUNNING` maupun saat layar hasil tampil | Seluruh elemen HUD dan overlay hasil disembunyikan/ditampilkan kembali tanpa mengubah state kompetisi. |
+## 2. Checklist Validasi Manual Golden Path (12 Skenario Wajib)
+
+Status eksekusi GUI oleh manusia saat ini: **NOT RUN** (wajib dijalankan secara interaktif di jendela Godot 4.7.2).
+
+1. **Skenario 1 — Full Course Completion:** Mulai dari `SpawnPoint` -> lewati `StartGate` -> selesaikan `Stepping Pads` (1/6) -> `Balance Beam` (2/6) -> `Moving Platform` (3/6) -> `Rotating Sweeper` (4/6) -> `Swinging Pendulum` (5/6) -> `Warped Wall` (6/6) -> masuk `FinishZone` -> pastikan muncul `STAGE CLEAR` dan `COMPLETED: 6/6`.
+2. **Skenario 2 — Fail on Stepping Pads:** Lompat meleset di antara pad biru -> pastikan status berubah ke `FAILED` (`Fell at Stepping Pads`) dan karakter tidak langsung di-respawn.
+3. **Skenario 3 — Fail on Balance Beam:** Jatuh dari samping balok keseimbangan -> pastikan status berubah ke `FAILED` (`Fell at Balance Beam`).
+4. **Skenario 4 — Dynamic Obstacle Displacement:** Berdiri diam di jalur `Rotating Sweeper` dan `Swinging Pendulum` saat `RUNNING` -> pastikan karakter terdorong oleh lengan sweeper / bandul.
+5. **Skenario 5 — Warped Wall Summit:** Tahan `Left Shift + W` pada landasan Warped Wall dan lompat (`Space`) di kurva atas -> pastikan mendarat di `TopDeck` emas dan HUD menampilkan `OBSTACLE: Warped Wall [CLEARED]` (`COMPLETED: 6/6`).
+6. **Skenario 6 — Retry After Failure:** Setelah `FAILED`, tekan `R` atau klik tombol `Retry (R)` -> pastikan state kembali ke `READY`, timer `00:00.000`, `COMPLETED: 0/6`, dan posisi rintangan dinamis ter-reset.
+7. **Skenario 7 — Retry After Victory:** Setelah `STAGE CLEAR`, tekan `R` atau klik `Retry (R)` -> pastikan kembali ke `READY` dengan `run_id` baru.
+8. **Skenario 8 — Early FinishZone Rejection:** Lompati/lewati rintangan tanpa menyentuh `ExitTrigger` semua 6 rintangan lalu masuk `FinishZone` -> pastikan `STAGE CLEAR` ditolak karena `COMPLETED < 6/6`.
+9. **Skenario 9 — Pause During Moving Obstacle:** Tekan `Esc` saat `Moving Platform`, `Sweeper`, atau `Pendulum` bergerak -> pastikan seluruh rintangan dan timer berhenti tepat di posisinya.
+10. **Skenario 10 — Resume Without Phase Discontinuity:** Klik `Resume` atau tekan `Esc` kembali -> pastikan rintangan melanjutkan gerakan dari posisi terakhir tanpa loncatan fase.
+11. **Skenario 11 — Clean Feed (`H`):** Tekan `H` saat bermain maupun saat panel hasil tampil -> pastikan HUD/overlay tersembunyi tanpa mengubah timer atau state kompetisi.
+12. **Skenario 12 — Timer & Completion Count Accuracy:** Pastikan memasuki rintangan hanya menampilkan `[IN PROGRESS]` tanpa menambah angka `COMPLETED`, dan melewati ujung keluar rintangan mengubahnya menjadi `[CLEARED]` serta menambah `COMPLETED` tepat +1.
