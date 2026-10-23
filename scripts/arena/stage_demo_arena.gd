@@ -7,6 +7,7 @@ signal start_gate_crossed(player: PlayerController)
 signal finish_zone_reached(player: PlayerController)
 signal player_fell(player: PlayerController, reason: String, obstacle_id: String)
 signal obstacle_entered(obstacle: ObstacleBase, index: int, total: int)
+signal obstacle_completed(obstacle: ObstacleBase, index: int, total: int)
 
 @export var stage_id: String = "stage_01_demo"
 @export var stage_name: String = "STAGE 01 — NINJA COURSE DEMO"
@@ -59,12 +60,40 @@ func get_obstacle_count() -> int:
 	return get_obstacles().size()
 
 
+func get_required_obstacle_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for obs: ObstacleBase in get_obstacles():
+		if is_instance_valid(obs):
+			ids.append(obs.obstacle_id)
+	return ids
+
+
+func get_obstacle_enabled_map() -> Dictionary:
+	var enabled_map: Dictionary = {}
+	for obs: ObstacleBase in get_obstacles():
+		if is_instance_valid(obs):
+			enabled_map[obs.obstacle_id] = obs.is_enabled
+	return enabled_map
+
+
 func get_last_obstacle_id() -> String:
 	return _last_obstacle_id
 
 
 func get_last_obstacle_name() -> String:
 	return _last_obstacle_name
+
+
+func start_obstacles_simulation() -> void:
+	for obs: ObstacleBase in get_obstacles():
+		if is_instance_valid(obs):
+			obs.start_simulation()
+
+
+func stop_obstacles_simulation() -> void:
+	for obs: ObstacleBase in get_obstacles():
+		if is_instance_valid(obs):
+			obs.stop_simulation()
 
 
 func reset_all_obstacles() -> void:
@@ -91,6 +120,8 @@ func _collect_obstacles() -> void:
 			var captured_index: int = idx
 			if not obs.obstacle_entered.is_connected(_on_obstacle_entered):
 				obs.obstacle_entered.connect(_on_obstacle_entered.bind(captured_index))
+			if not obs.obstacle_completed.is_connected(_on_obstacle_completed):
+				obs.obstacle_completed.connect(_on_obstacle_completed.bind(captured_index))
 			if not obs.obstacle_hazard_hit.is_connected(_on_obstacle_hazard_hit):
 				obs.obstacle_hazard_hit.connect(_on_obstacle_hazard_hit)
 
@@ -114,12 +145,24 @@ func _on_fail_zone_body_entered(body: Node3D) -> void:
 
 
 func _on_obstacle_entered(obstacle: ObstacleBase, _player: PlayerController, index: int) -> void:
+	if not obstacle.is_enabled:
+		return
 	_last_obstacle_id = obstacle.obstacle_id
 	_last_obstacle_name = obstacle.display_name
 	obstacle_entered.emit(obstacle, index, _obstacles.size())
 
 
+func _on_obstacle_completed(obstacle: ObstacleBase, _player: PlayerController, index: int) -> void:
+	if not obstacle.is_enabled:
+		return
+	_last_obstacle_id = obstacle.obstacle_id
+	_last_obstacle_name = obstacle.display_name
+	obstacle_completed.emit(obstacle, index, _obstacles.size())
+
+
 func _on_obstacle_hazard_hit(obstacle: ObstacleBase, player: PlayerController, reason: String) -> void:
+	if not obstacle.is_enabled:
+		return
 	_last_obstacle_id = obstacle.obstacle_id
 	_last_obstacle_name = obstacle.display_name
 	player_fell.emit(player, reason, obstacle.obstacle_id)

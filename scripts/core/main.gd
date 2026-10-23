@@ -1,7 +1,8 @@
 class_name MainApp
 extends Node3D
 
-## Root coordinator for M1a competition lifecycle, obstacle resets, HUD/result sync, and pause/retry flow.
+## Root coordinator for M1a competition lifecycle, ordered route validation, dynamic obstacle simulation,
+## HUD/result synchronization, and pause/retry flow.
 
 signal session_restarted()
 signal pause_toggled(is_paused: bool)
@@ -81,6 +82,10 @@ func restart_session() -> void:
 		stage_arena.reset_all_obstacles()
 		time_limit = stage_arena.time_limit_sec
 		obstacle_count = stage_arena.get_obstacle_count()
+		run_session.configure_route(
+			stage_arena.get_required_obstacle_ids(),
+			stage_arena.get_obstacle_enabled_map()
+		)
 		if _hud != null:
 			_hud.set_stage_name(stage_arena.stage_name)
 	elif _arena != null and _arena.has_method("reset_all_obstacles"):
@@ -94,7 +99,7 @@ func restart_session() -> void:
 func respawn_player() -> void:
 	if _player == null:
 		return
-	var spawn_xform: Transform3D = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.1, 2.4))
+	var spawn_xform: Transform3D = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.0, 2.4))
 	if _arena != null and _arena.has_method("get_spawn_transform"):
 		spawn_xform = _arena.call("get_spawn_transform")
 	_player.reset_to_transform(spawn_xform)
@@ -195,6 +200,8 @@ func _connect_arena_signals() -> void:
 			stage_arena.player_fell.connect(_on_stage_player_fell)
 		if not stage_arena.obstacle_entered.is_connected(_on_stage_obstacle_entered):
 			stage_arena.obstacle_entered.connect(_on_stage_obstacle_entered)
+		if not stage_arena.obstacle_completed.is_connected(_on_stage_obstacle_completed):
+			stage_arena.obstacle_completed.connect(_on_stage_obstacle_completed)
 	elif _arena is PrototypeArena:
 		var proto_arena: PrototypeArena = _arena as PrototypeArena
 		if not proto_arena.player_fell.is_connected(_on_prototype_player_fell):
@@ -207,8 +214,13 @@ func _on_start_gate_crossed(_body: PlayerController) -> void:
 
 
 func _on_finish_zone_reached(_body: PlayerController) -> void:
-	if run_session.state == RunSession.RunState.RUNNING:
-		run_session.finish_run()
+	if run_session.state != RunSession.RunState.RUNNING:
+		return
+	if _arena is StageDemoArena:
+		var stage_arena: StageDemoArena = _arena as StageDemoArena
+		for obs: ObstacleBase in stage_arena.get_obstacles():
+			run_session.set_obstacle_enabled(obs.obstacle_id, obs.is_enabled)
+	run_session.finish_run()
 
 
 func _on_stage_player_fell(_body: PlayerController, reason: String, obstacle_id: String) -> void:
@@ -221,23 +233,41 @@ func _on_prototype_player_fell(_body: Node3D) -> void:
 		_handle_player_fall("Fell into Prototype Hazard", "")
 
 
-func _on_stage_obstacle_entered(obstacle: ObstacleBase, index: int, _total: int) -> void:
-	if run_session.state == RunSession.RunState.READY:
-		run_session.start_run()
-	run_session.record_obstacle_progress(obstacle.obstacle_id, obstacle.display_name, index)
+func _on_stage_obstacle_entered(obstacle: ObstacleBase, _index: int, _total: int) -> void:
+	if run_session.state != RunSession.RunState.RUNNING or not obstacle.is_enabled:
+		return
+	run_session.set_obstacle_enabled(obstacle.obstacle_id, obstacle.is_enabled)
+	if run_session.record_obstacle_entered(obstacle.obstacle_id, obstacle.display_name, obstacle.is_enabled):
+		obstacle.mark_entered()
+
+
+func _on_stage_obstacle_completed(obstacle: ObstacleBase, _index: int, _total: int) -> void:
+	if run_session.state != RunSession.RunState.RUNNING or not obstacle.is_enabled:
+		return
+	run_session.set_obstacle_enabled(obstacle.obstacle_id, obstacle.is_enabled)
+	if run_session.record_obstacle_completed(obstacle.obstacle_id, obstacle.display_name, obstacle.is_enabled):
+		obstacle.mark_completed()
 
 
 func _handle_player_fall(reason: String, obstacle_id: String) -> void:
 	if run_session.is_terminal():
 		return
 	if run_session.state == RunSession.RunState.READY:
-		run_session.start_run()
+		# Safe recovery in READY without creating a fake RUNNING -> FAILED attempt
+		respawn_player()
+		return
 	run_session.fail_run(reason, obstacle_id)
 
 
-func _on_run_state_changed(_new_state: RunSession.RunState, state_name: String) -> void:
+func _on_run_state_changed(new_state: RunSession.RunState, state_name: String) -> void:
 	if _hud != null:
 		_hud.set_run_state_text(state_name)
+	if _arena is StageDemoArena:
+		var stage_arena: StageDemoArena = _arena as StageDemoArena
+		if new_state == RunSession.RunState.RUNNING:
+			stage_arena.start_obstacles_simulation()
+		else:
+			stage_arena.stop_obstacles_simulation()
 
 
 func _on_run_time_updated(elapsed_sec: float, remaining_sec: float) -> void:
@@ -245,9 +275,15 @@ func _on_run_time_updated(elapsed_sec: float, remaining_sec: float) -> void:
 		_hud.set_timer_values(elapsed_sec, remaining_sec)
 
 
-func _on_run_obstacle_updated(_obstacle_id: String, obstacle_name: String, index: int, total: int) -> void:
+func _on_run_obstacle_updated(
+	_obstacle_id: String,
+	obstacle_name: String,
+	status_text: String,
+	completed_count: int,
+	total: int
+) -> void:
 	if _hud != null:
-		_hud.set_obstacle_progress(obstacle_name, index, total)
+		_hud.set_obstacle_progress(obstacle_name, status_text, completed_count, total)
 
 
 func _on_run_completed(
@@ -257,13 +293,22 @@ func _on_run_completed(
 	reason: String,
 	last_obstacle_id: String
 ) -> void:
+	if _arena is StageDemoArena:
+		(_arena as StageDemoArena).stop_obstacles_simulation()
 	if _player != null:
 		_player.controls_enabled = false
 		_player.velocity = Vector3.ZERO
 		if _player.get_camera_rig() != null:
 			_player.get_camera_rig().release_mouse()
 	if _hud != null:
-		_hud.show_result(final_state, elapsed_sec, reason, last_obstacle_id)
+		_hud.show_result(
+			final_state,
+			elapsed_sec,
+			reason,
+			last_obstacle_id,
+			run_session.get_completed_count(),
+			run_session.total_obstacles
+		)
 
 
 func _on_player_state_changed(_new_state: PlayerController.LocomotionState, state_name: String) -> void:

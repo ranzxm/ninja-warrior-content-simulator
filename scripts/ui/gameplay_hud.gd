@@ -1,7 +1,7 @@
 class_name GameplayHud
 extends Control
 
-## Competition & gameplay HUD displaying stage, run state, timer, obstacle progress, and result overlay.
+## Competition & gameplay HUD displaying stage, run state, timer, obstacle status, completed count, and result overlay.
 
 signal retry_requested()
 
@@ -14,9 +14,10 @@ signal retry_requested()
 @onready var _timer_label: Label = get_node_or_null("MarginContainer/VBoxContainer/CompetitionBar/TimerLabel") as Label
 @onready var _limit_label: Label = get_node_or_null("MarginContainer/VBoxContainer/CompetitionBar/LimitLabel") as Label
 @onready var _obstacle_label: Label = get_node_or_null("MarginContainer/VBoxContainer/CompetitionBar/ObstacleLabel") as Label
+@onready var _completed_label: Label = get_node_or_null("MarginContainer/VBoxContainer/CompetitionBar/CompletedLabel") as Label
 
 @onready var _result_overlay: Control = get_node_or_null("ResultOverlay") as Control
-@onready var _result_Banner_label: Label = get_node_or_null("ResultOverlay/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/BannerLabel") as Label
+@onready var _result_banner_label: Label = get_node_or_null("ResultOverlay/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/BannerLabel") as Label
 @onready var _result_detail_label: Label = get_node_or_null("ResultOverlay/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/DetailLabel") as Label
 @onready var _result_sub_label: Label = get_node_or_null("ResultOverlay/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/SubLabel") as Label
 @onready var _retry_button: Button = get_node_or_null("ResultOverlay/CenterContainer/PanelContainer/MarginContainer/VBoxContainer/RetryButton") as Button
@@ -30,7 +31,7 @@ func _ready() -> void:
 	set_player_state_text("IDLE")
 	set_run_state_text("READY")
 	set_timer_values(0.0, 120.0)
-	set_obstacle_progress("Ready at Start", 0, 6)
+	set_obstacle_progress("Ready at Start", "READY", 0, 6)
 	hide_result()
 
 
@@ -61,43 +62,58 @@ func set_timer_values(elapsed_sec: float, remaining_sec: float) -> void:
 		_limit_label.text = "REMAINING: %s" % RunSession.format_time_ms(remaining_sec)
 
 
-func set_obstacle_progress(obstacle_name: String, index: int, total: int) -> void:
+func set_obstacle_progress(
+	obstacle_name: String,
+	status_text: String,
+	completed_count: int,
+	total: int
+) -> void:
 	if _obstacle_label != null:
-		var label_name: String = obstacle_name if not obstacle_name.is_empty() else "Course"
-		_obstacle_label.text = "OBSTACLE: %s (%d/%d)" % [label_name, index, total]
+		var label_name: String = obstacle_name if not obstacle_name.is_empty() else "Ready at Start"
+		var status_clean: String = status_text if not status_text.is_empty() else "READY"
+		_obstacle_label.text = "OBSTACLE: %s [%s]" % [label_name, status_clean]
+	if _completed_label != null:
+		_completed_label.text = "COMPLETED: %d/%d" % [completed_count, total]
 
 
 func show_result(
 	final_state: RunSession.RunState,
 	elapsed_sec: float,
 	reason: String,
-	last_obstacle_id: String
+	last_obstacle_id: String,
+	completed_count: int = 0,
+	total_count: int = 6
 ) -> void:
 	if _result_overlay == null:
 		return
 
 	var banner: String = "STAGE CLEAR"
 	var detail: String = "Completion Time: %s" % RunSession.format_time_ms(elapsed_sec)
-	var sub: String = "All obstacles cleared!"
+	var sub: String = "Cleared: %d/%d" % [completed_count, total_count]
 
 	match final_state:
 		RunSession.RunState.FINISHED:
 			banner = "STAGE CLEAR"
 			detail = "Completion Time: %s" % RunSession.format_time_ms(elapsed_sec)
-			sub = "Status: FINISHED"
+			sub = "Status: FINISHED (%d/%d Cleared)" % [completed_count, total_count]
 		RunSession.RunState.FAILED:
 			banner = "FAILED"
 			detail = "Reason: %s" % (reason if not reason.is_empty() else "Course Hazard")
 			var obs_info: String = last_obstacle_id if not last_obstacle_id.is_empty() else "start"
-			sub = "Elapsed: %s | Last Obstacle: %s" % [RunSession.format_time_ms(elapsed_sec), obs_info]
+			sub = "Elapsed: %s | Cleared: %d/%d | Obstacle: %s" % [
+				RunSession.format_time_ms(elapsed_sec),
+				completed_count,
+				total_count,
+				obs_info,
+			]
 		RunSession.RunState.TIMEOUT:
 			banner = "TIME UP"
 			detail = "Time Limit Reached: %s" % RunSession.format_time_ms(elapsed_sec)
 			var obs_timeout: String = last_obstacle_id if not last_obstacle_id.is_empty() else "start"
-			sub = "Last Obstacle: %s" % obs_timeout
+			sub = "Cleared: %d/%d | Obstacle: %s" % [completed_count, total_count, obs_timeout]
 
-	if _result_Banner_label != null:
-		_result_Banner_label.text = banner
+	if _result_banner_label != null:
+		_result_banner_label.text = banner
 	if _result_detail_label != null:
 		_result_detail_label.text = detail
 	if _result_sub_label != null:
@@ -118,7 +134,7 @@ func is_result_visible() -> bool:
 
 
 func get_result_banner_text() -> String:
-	return _result_Banner_label.text if _result_Banner_label != null else ""
+	return _result_banner_label.text if _result_banner_label != null else ""
 
 
 func toggle_clean_feed() -> void:
@@ -139,6 +155,14 @@ func get_run_state_text() -> String:
 
 func get_timer_text() -> String:
 	return _timer_label.text if _timer_label != null else ""
+
+
+func get_obstacle_text() -> String:
+	return _obstacle_label.text if _obstacle_label != null else ""
+
+
+func get_completed_text() -> String:
+	return _completed_label.text if _completed_label != null else ""
 
 
 func _on_retry_button_pressed() -> void:

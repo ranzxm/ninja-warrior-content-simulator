@@ -75,7 +75,11 @@ text = "REMAINING: 02:00.000"
 
 [node name="ObstacleLabel" type="Label" parent="MarginContainer/VBoxContainer/CompetitionBar"]
 layout_mode = 2
-text = "OBSTACLE: Ready at Start (0/6)"
+text = "OBSTACLE: Ready at Start [READY]"
+
+[node name="CompletedLabel" type="Label" parent="MarginContainer/VBoxContainer/CompetitionBar"]
+layout_mode = 2
+text = "COMPLETED: 0/6"
 
 [node name="CenterSpacer" type="Control" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
@@ -110,7 +114,7 @@ grow_vertical = 2
 mouse_filter = 2
 
 [node name="PanelContainer" type="PanelContainer" parent="ResultOverlay/CenterContainer"]
-custom_minimum_size = Vector2(380, 210)
+custom_minimum_size = Vector2(400, 210)
 layout_mode = 2
 
 [node name="MarginContainer" type="MarginContainer" parent="ResultOverlay/CenterContainer/PanelContainer"]
