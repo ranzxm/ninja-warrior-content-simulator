@@ -28,7 +28,7 @@ var _current_angle_rad: float = 0.0
 
 
 func _init() -> void:
-	obstacle_id = "obs_05_swinging_pendulum"
+	super._init()
 	obstacle_type = "swinging_pendulum"
 	display_name = "Swinging Pendulum"
 

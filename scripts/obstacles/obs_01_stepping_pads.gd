@@ -23,7 +23,7 @@ var _pad_material: StandardMaterial3D = null
 
 
 func _init() -> void:
-	obstacle_id = "obs_01_stepping_pads"
+	super._init()
 	obstacle_type = "stepping_pads"
 	display_name = "Stepping Pads"
 

@@ -19,7 +19,7 @@ const ALLOWED_KEYS: Array[String] = [
 
 
 func _init() -> void:
-	obstacle_id = "obs_02_balance_beam"
+	super._init()
 	obstacle_type = "balance_beam"
 	display_name = "Balance Beam"
 

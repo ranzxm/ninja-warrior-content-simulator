@@ -181,27 +181,33 @@ shape = SubResource("BoxShape3D_deck")
 [node name="Obstacles" type="Node3D" parent="."]
 
 [node name="Obs01SteppingPads" parent="Obstacles" instance=ExtResource("2_obs01")]
-obstacle_id = "obs_01_stepping_pads"
+instance_id = "ob_000001"
+obstacle_id = "ob_000001"
 
 [node name="Obs02BalanceBeam" parent="Obstacles" instance=ExtResource("3_obs02")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -14.2)
-obstacle_id = "obs_02_balance_beam"
+instance_id = "ob_000002"
+obstacle_id = "ob_000002"
 
 [node name="Obs03MovingPlatform" parent="Obstacles" instance=ExtResource("4_obs03")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -24.2)
-obstacle_id = "obs_03_moving_platform"
+instance_id = "ob_000003"
+obstacle_id = "ob_000003"
 
 [node name="Obs04RotatingSweeper" parent="Obstacles" instance=ExtResource("5_obs04")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -35.2)
-obstacle_id = "obs_04_rotating_sweeper"
+instance_id = "ob_000004"
+obstacle_id = "ob_000004"
 
 [node name="Obs05SwingingPendulum" parent="Obstacles" instance=ExtResource("6_obs05")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -45.2)
-obstacle_id = "obs_05_swinging_pendulum"
+instance_id = "ob_000005"
+obstacle_id = "ob_000005"
 
 [node name="Obs06WarpedWall" parent="Obstacles" instance=ExtResource("7_obs06")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -55.2)
-obstacle_id = "obs_06_warped_wall"
+instance_id = "ob_000006"
+obstacle_id = "ob_000006"
 
 [node name="FinishPlatform" type="StaticBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, -68.3)

@@ -29,7 +29,7 @@ var _current_angle_rad: float = 0.0
 
 
 func _init() -> void:
-	obstacle_id = "obs_04_rotating_sweeper"
+	super._init()
 	obstacle_type = "rotating_sweeper"
 	display_name = "Rotating Sweeper"
 

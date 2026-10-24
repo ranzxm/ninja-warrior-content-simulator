@@ -25,7 +25,7 @@ var _top_material: StandardMaterial3D = null
 
 
 func _init() -> void:
-	obstacle_id = "obs_06_warped_wall"
+	super._init()
 	obstacle_type = "warped_wall"
 	display_name = "Warped Wall"
 

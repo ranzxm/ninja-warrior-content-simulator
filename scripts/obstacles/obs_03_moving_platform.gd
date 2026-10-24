@@ -26,7 +26,7 @@ var _direction: int = 1
 
 
 func _init() -> void:
-	obstacle_id = "obs_03_moving_platform"
+	super._init()
 	obstacle_type = "moving_platform"
 	display_name = "Moving Platform"
 
