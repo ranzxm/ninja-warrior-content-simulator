@@ -1,5 +1,20 @@
 # TEST PLAN — Ninja Warrior Content Simulator (M0–M1b)
 
+## Task 005 — Connected controls / geometry stability
+
+Execute with Godot 4.7.2:
+
+```powershell
+& $godot --headless --debug --path . -s res://tests/smoke_test_m1b_editor_stability.gd
+& $godot --debug --path . -s res://tests/smoke_test_m1b_editor_stability.gd
+& $godot --headless --path . -s res://tests/geometry_safeguards_check.gd
+& $godot --headless --path . -s res://tests/arena_repository_preservation_check.gd
+```
+
+Stability: actual SpinBox signals, keyboard Enter, viewport spinner-arrow events, focus/caret/selection, 244 geometry operations, all six types, generated counts, 20 duplicates, delete/undo/redo, drag transactions, saved-state tracking, persistence, modes and placement. Result: **PASS (1,798 checks)** headless and rendered Compatibility. Geometry/resource identity and persistence-failure checks: PASS. Existing suites remain mandatory. Intentional rejected edits produce warnings; the isolated repository suite deliberately triggers `DirAccess.copy` backup-open errors and asserts preservation. Any unexpected engine error invalidates a run regardless of process exit code.
+
+Human acceptance still required: rapid resize all six types; build/move/rotate/duplicate/delete/history; save/close/relaunch/load; custom traversal/fail/retry/return/edit; interact at 720p/900p/1080p. Record actual PASS/FAIL/NOT RUN individually. Current complete human scenarios: **NOT RUN**. Rendered screenshots/bounds checks do not replace these. Investigation evidence and diagnostics: `M1B_EDITOR_STABILITY_REPORT.md`.
+
 ## 1. Pemeriksaan Otomatis (Headless CLI)
 
 Dijalankan menggunakan binary resmi `Godot_v4.7.2-stable_win64_console.exe`:

@@ -1,5 +1,13 @@
 # ARCHITECTURE — Ninja Warrior Content Simulator (M0–M1b)
 
+## Task 005 stability update
+
+`ArenaEditor` coordinates existing arena/persistence APIs; `EditorLayout` composes native Control sections; `ParameterInspector` owns stable descriptor-driven inputs and staged values. Ordinary edits never rebuild the emitting controls. Enter/focus exit commits deferred; spinner values coalesce for 300ms and wait for release. Selection/save/mode/history boundaries flush pending values. Transform drag preview does not serialize; release records one of 25 snapshots. Undo/redo resolves selection by stable instance ID and compares content with the save point.
+
+Geometry resources are instance-local, reused across dimensions. Pads/slabs persist; excess pads detach disabled and queue deletion. `apply_parameters()` remains synchronous for safe callers; physics query callbacks use `request_apply_parameters()` deferred. No-op changes skip rebuild/reset. Geometry revision/signal refresh cached mesh-inclusive bounds and selection. Editor pick bodies may remain disabled during PLAY after an EDIT visit; this replaces the previous removal policy.
+
+Selection uses line edges; palette is single-shot PLACE, not immediate creation. Spawn/Finish are separate inspector states. Toolbar metadata lives in Settings. Save verifies exact temporary bytes, checks backup/replacement failures; Windows engine rename is **not guaranteed crash-atomic**. Backup recovery remains required. Details: `M1B_EDITOR_STABILITY_REPORT.md`. No competition or M2a redesign.
+
 ## 1. Struktur Direktori
 ```text
 res://

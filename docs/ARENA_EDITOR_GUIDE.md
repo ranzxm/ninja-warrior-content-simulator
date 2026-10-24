@@ -1,40 +1,50 @@
-# ARENA EDITOR GUIDE — Ninja Warrior Content Simulator (M1b)
+# Arena Editor Guide — M1b stabilization
 
-## 1. Overview
-The in-game Arena Editor runs directly inside the application (`PLAY` ↔ `EDIT` mode) without requiring the Godot Editor. It allows creating, customizing, validating, saving, loading, and test-playing 3D obstacle courses at `1280×720` or higher.
+The editor runs inside the game executable. Minimum window: 1280×720.
 
-## 2. Switching Between PLAY and EDIT Modes
-- Press **`F2`** or click **`Edit Arena (F2)`** on the Gameplay HUD to enter `EDIT` mode.
-- If a competition run is currently `RUNNING`, a confirmation dialog asks before stopping the run.
-- In `EDIT` mode, click **`Test Play (F2)`** or press **`F2`** to validate the arena and launch `PLAY` mode from the edited `SpawnPoint`.
-- Returning from `Test Play` to `EDIT` mode preserves all placed obstacles, route ordering, and unsaved modification flags.
+## Build a course
 
-## 3. Editor Camera & Viewport Controls
+1. Press F2 or use **Edit Arena**. An active run requires stop confirmation.
+2. Click **New**. Unsaved changes require discard confirmation.
+3. Click a palette obstacle. This starts **PLACE**; it creates nothing yet. Move over the viewport, click once to place. The new obstacle is selected; tool returns to SELECT. Escape cancels without creating anything. Red ghost means invalid placement or object limit reached.
+4. Select objects with left-click or the Course Route list. Empty space clears selection. F focuses selection.
+5. Choose **MOVE**, drag in the viewport on XZ. Choose **ROTATE**, drag horizontally to rotate Y. Release commits one undo step; Escape restores the start. Shift+drag also moves in SELECT. Snap uses the displayed grid and 15-degree rotation increments.
+6. Inspector **Transform** labels X/Y/Z and Y rotation individually. Enter numeric values, then **Apply Transform**. Y sets height. Reset position/rotation are separate actions. Root scaling is not supported; use validated dimensions.
+7. Expand **Parameters**. Type a value and press Enter or leave the field. Spinner changes apply after release/brief inactivity. Changes retain focus and selection; invalid configurations preserve the previous geometry. Reset parameters restores type defaults. Duplicate/Delete are below parameters or available through shortcuts.
+8. Select **Spawn** or **Finish** in the sidebar for their own inspector. Edit position/rotation and Finish dimensions; click its **Apply** button. Infrastructure cannot be deleted.
+9. Reorder Course Route using Up/Down. New/duplicate obstacles append; deletion removes their route reference. Disabled obstacles remain visible/selectable in EDIT but have no gameplay collision. Disabled route entries block Test Play until re-enabled or route configuration changed.
+10. **Validate** opens errors/warnings. Warnings are heuristics, not proof that a course is completable.
+
+## Save and test
+
+- Top bar: arena name, New, Open, Save, Test Play, Settings. Name applies on Enter/focus exit.
+- Settings: arena ID, time limit and theme; **Set Meta** commits. Themes are metadata, not new visual theme assets.
+- Open: saved file list plus **Save As** ID/name fields. IDs use letters, numbers, underscore/hyphen, up to 64 characters. No paths.
+- Save: `user://arenas/<arena_id>.json`. Backup: `.json.bak`; verified temporary file: `.json.tmp`. Failures leave the dirty indicator and show an error. Windows replacement is not guaranteed power-loss atomic; preserve `.bak` for recovery.
+- **Test Play / F2** validates, resets physics/timer/player and starts READY using the same arena. F2 returns to EDIT; unsaved changes persist.
+- Undo/Redo retain 25 completed actions. Returning to saved content clears the dirty indicator. Save/load/reset do not require the Godot Editor.
+
+## Controls
 
 | Input | Action |
 |---|---|
-| `Right Mouse Drag` | Orbit camera around focus point |
-| `Middle Mouse Drag` / `Shift + Right Drag` | Pan camera horizontally and vertically |
-| `Mouse Wheel Up / Down` | Zoom in / out (`3.0m` to `120.0m`) |
-| `F` | Focus camera on selected obstacle (or `SpawnPoint` if none selected) |
-| `Left Click` (3D Viewport) | Select obstacle under cursor (or place obstacle when in placement mode) |
-| `Shift + Left Drag` | Move selected obstacle across the horizontal XZ plane |
-| `Q / E` | Rotate selected obstacle `-15°` / `+15°` around Y axis |
-| `Ctrl + D` | Duplicate selected obstacle with a new unique `instance_id` |
-| `Delete` | Delete selected obstacle and remove its route entry |
-| `Ctrl + S` | Save current arena to `user://arenas/<arena_id>.json` |
-| `Ctrl + Z / Ctrl + Y` | Undo / Redo (up to 25 snapshots) |
-| `Esc` | Cancel active placement mode or close file dialog |
-| `F2` | Toggle `EDIT` / `PLAY` mode |
+| F2 | EDIT / Test Play |
+| Left-click | Select / place once |
+| MOVE + drag; Shift+drag | XZ move, release commits |
+| ROTATE + drag; Q/E | Y rotation; Q/E changes 15 degrees |
+| Right-drag | Orbit |
+| Middle-drag / Shift+right-drag | Pan |
+| Wheel | Zoom, 3–120 m |
+| F | Focus selected object; otherwise Spawn |
+| Camera Reset / Frame All / Spawn | Reset view / frame course / focus start |
+| Ctrl+D / Delete | Duplicate / delete obstacle, ignored while typing |
+| Ctrl+S | Save including pending parameter edit |
+| Ctrl+Z / Ctrl+Y | Undo / redo, ignored while typing |
+| Escape | Cancel placement/drag, close file panel, leave text input |
+| Help | Show controls |
 
-## 4. Building & Editing an Arena
-1. **New Arena:** Click **`New`** on the top toolbar to start a blank course with `SpawnPoint` and `FinishZone`.
-2. **Obstacle Palette (Left Dock):** Click any of the 6 obstacle types (`Stepping Pads`, `Balance Beam`, `Moving Platform`, `Rotating Sweeper`, `Swinging Pendulum`, `Warped Wall`) to place an instance and enter placement mode. Move the mouse in the 3D viewport to position the ghost preview and left-click to place additional instances, or press `Esc` to exit placement mode.
-3. **Inspector (Right Dock):**
-   - Edit `Position (X, Y, Z)` and `Rotation Y` numerically, or click `Rst Pos` / `Rst Rot`.
-   - Toggle `Obstacle Enabled` (`is_enabled`).
-   - Adjust obstacle-specific parameters (`pad_count`, `beam_length`, `movement_speed`, `travel_mode`, `rotation_speed`, `swing_amplitude_deg`, `wall_height`, etc.). Invalid values are rejected atomically without corrupting geometry.
-   - Note: Arbitrary root node scaling is locked to `(1, 1, 1)` so physics colliders remain exact; all dimensions are controlled through validated obstacle parameters.
-4. **Spawn & Finish Editor (Right Dock):** Adjust `SpawnPoint` (`X, Y, Z, Rot Y`) and `FinishZone` (`X, Y, Z, Rot Y, Size X/Y/Z`), then click **`Apply Spawn & Finish`**.
-5. **Ordered Route Panel (Left Dock):** View the required completion sequence (`1. ob_000001`, `2. ob_000002`, ...) and reorder obstacles using **`Move Up`** / **`Move Down`**.
-6. **Validate & Save:** Click **`Validate`** to inspect errors and warnings. Click **`Save (Ctrl+S)`** or **`Open / Save As`** to persist to `user://arenas/`.
+Bottom status shows mode/tool, selected ID, snapping and saved/unsaved state. Hover truncated status text to read the complete message. Inspector scrolls vertically; no horizontal input rows. Placement height follows `placement_height` (default 0); place at ground then change Position Y in the inspector.
+
+## Verification limits
+
+Automated connected-control and rendered stress checks pass. Full human rapid-edit, restart round-trip and custom-course traversal acceptance remains pending. See `M1B_EDITOR_STABILITY_REPORT.md` for exact evidence, diagnostics and limitations.

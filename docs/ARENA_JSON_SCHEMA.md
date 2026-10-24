@@ -1,6 +1,7 @@
 # ARENA JSON SCHEMA — Ninja Warrior Content Simulator (M1b)
 
 ## 1. Storage Location & File Rules
+- Task 005 clarification: temporary bytes and backup/replacement errors are checked. Godot Windows rename is not guaranteed power-loss atomic; `.bak` is retained for recovery. Earlier "atomic replacement" wording describes the intended validated workflow, not an interruption-proof OS guarantee.
 - **Directory:** `user://arenas/`
 - **Filename Format:** `<arena_id>.json`
 - **Backup File:** `<arena_id>.json.bak` (created/rotated automatically before overwriting an existing valid file)

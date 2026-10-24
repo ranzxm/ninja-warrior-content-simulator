@@ -1,5 +1,9 @@
 # IMPLEMENTATION STATUS — Ninja Warrior Content Simulator
 
+## Task 005 — Editor stability / UX (2026-10-24)
+
+**PARTIAL**. Baseline actual SpinBox signal reproduced emitter destruction with Godot engine error; native force-close itself not reproduced (exit 0). Stable controls, transactional edits, reused geometry, responsive labeled inspector, single-shot placement, wire selection and one-gesture undo implemented. Exact Godot 4.7.2 headless/rendered checks pass: stability **1,798 checks / 244 parameter operations**, existing M0/M1a/M1b retained. Complete human scenarios 1–5 remain pending; rendered automation is not human acceptance. Windows save replacement power-loss atomicity remains a limitation. See `M1B_EDITOR_STABILITY_REPORT.md`; M2a must wait for M1b acceptance.
+
 > **Milestone Aktif:** M1b — In-Game Arena Editor, Modular Course Builder & Persistence  
 > **Pembaruan Terakhir:** 24 Oktober 2026
 
