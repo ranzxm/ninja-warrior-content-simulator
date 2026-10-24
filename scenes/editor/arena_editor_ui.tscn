@@ -1,6 +1,9 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/editor/arena_editor.gd" id="1_editor"]
+
+[sub_resource type="Theme" id="Theme_editor"]
+default_font_size = 14
 
 [node name="ArenaEditor" type="Control"]
 process_mode = 3
@@ -12,4 +15,5 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 1
+theme = SubResource("Theme_editor")
 script = ExtResource("1_editor")

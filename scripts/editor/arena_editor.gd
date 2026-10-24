@@ -10,6 +10,16 @@ signal exit_editor_requested()
 signal status_message_changed(message: String, is_error: bool)
 
 const MAX_UNDO_STEPS: int = 25
+enum Tool { SELECT, MOVE, ROTATE, PLACE }
+var active_tool: Tool = Tool.SELECT
+var _drag_snapshot: Dictionary = {}
+var _drag_start: Vector2
+var _drag_position: Vector3
+var _drag_rotation: float
+var _saved_state: String = ""
+var _marker_selection: String = ""
+var _parameter_inspector: ParameterInspector
+var _ghost_bounds: AABB
 
 var snap_enabled: bool = true
 var grid_size: float = 0.5
@@ -73,6 +83,9 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	_build_editor_ui_if_needed()
+	_parameter_inspector = ParameterInspector.new()
+	_params_container.add_child(_parameter_inspector)
+	_parameter_inspector.commit_requested.connect(_commit_parameters)
 	_refresh_palette_ui()
 	_refresh_all_ui()
 
@@ -80,11 +93,14 @@ func _ready() -> void:
 func setup(arena: StageDemoArena, editor_camera: EditorCamera) -> void:
 	_arena = arena
 	_editor_camera = editor_camera
+	_saved_state = JSON.stringify(ArenaSerializer.serialize_arena(arena))
 	_ensure_3d_helpers()
 	_refresh_all_ui()
 
 
 func set_editor_active(active: bool) -> void:
+	if _parameter_inspector != null:
+		_parameter_inspector.flush()
 	_active = active
 	visible = active
 	if not active:
@@ -125,7 +141,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		var ke: InputEventKey = event as InputEventKey
 		if ke.pressed and not ke.echo:
 			if ke.keycode == KEY_ESCAPE:
-				if not _pending_placement_type.is_empty():
+				if _dragging_selected:
+					_selected_obstacle.position = _drag_position
+					_selected_obstacle.rotation.y = _drag_rotation
+					_dragging_selected = false
+					_drag_snapshot = {}
+					_update_selection_highlight()
+					_refresh_transform_spinboxes()
+					get_viewport().set_input_as_handled()
+					return
+				elif not _pending_placement_type.is_empty():
 					cancel_placement()
 					get_viewport().set_input_as_handled()
 					return
@@ -173,9 +198,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not _pending_placement_type.is_empty():
 			_update_ghost_from_screen(mm.position)
 		elif _dragging_selected and get_selected_obstacle() != null:
-			var drag_pos: Vector3 = _project_screen_to_plane(mm.position, get_selected_obstacle().position.y)
-			if is_finite(drag_pos.x):
-				move_selected_obstacle(drag_pos, true)
+			preview_drag(mm.position)
 
 	elif event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event as InputEventMouseButton
@@ -186,16 +209,102 @@ func _unhandled_input(event: InputEvent) -> void:
 				if not _pending_placement_type.is_empty():
 					var target_pos: Vector3 = _project_screen_to_plane(mb.position, placement_height)
 					if is_finite(target_pos.x):
-						place_obstacle_at(_pending_placement_type, target_pos, 0.0, true)
+						if place_obstacle_at(_pending_placement_type, target_pos, 0.0, true) != null:
+							cancel_placement()
 					get_viewport().set_input_as_handled()
 				else:
 					var picked: ObstacleBase = select_at_screen_position(mb.position)
-					_dragging_selected = (picked != null and mb.shift_pressed)
+					if picked != null and (active_tool in [Tool.MOVE, Tool.ROTATE] or mb.shift_pressed):
+						begin_drag(mb.position)
 			else:
-				_dragging_selected = false
+				end_drag()
 
 
 # --- Core Editing Operations ---
+
+func _commit_parameters(parameters: Dictionary) -> void:
+	# Called by deferred Enter/focus exit or idle Timer, never by value_changed.
+	update_selected_parameters(parameters)
+
+func reset_selected_parameters() -> void:
+	var selected: ObstacleBase = get_selected_obstacle()
+	if selected != null:
+		update_selected_parameters(ObstacleFactory.get_default_parameters(selected.obstacle_type))
+
+func select_marker(marker: String) -> void:
+	select_obstacle(null)
+	_marker_selection = marker
+	_refresh_inspector_ui()
+	_refresh_spawn_finish_ui()
+	_inspector_title_label.text = "SpawnPoint" if marker == "spawn" else "FinishZone"
+	_set_status("Edit %s in the inspector." % _inspector_title_label.text, false)
+
+func set_tool(tool: int) -> void:
+	end_drag()
+	cancel_placement()
+	active_tool = tool as Tool
+	_refresh_status_bar()
+
+func begin_drag(screen_position: Vector2) -> void:
+	if get_selected_obstacle() == null:
+		return
+	_drag_snapshot = ArenaSerializer.serialize_arena(_arena)
+	_drag_start = screen_position
+	_drag_position = _selected_obstacle.position
+	_drag_rotation = _selected_obstacle.rotation.y
+	_dragging_selected = true
+
+func preview_drag(screen_position: Vector2) -> void:
+	if not _dragging_selected or get_selected_obstacle() == null:
+		return
+	if active_tool == Tool.ROTATE:
+		var degrees: float = rad_to_deg(_drag_rotation) + (screen_position.x - _drag_start.x) * 0.5
+		_selected_obstacle.rotation.y = deg_to_rad(snappedf(degrees, 15.0) if snap_enabled else degrees)
+	else:
+		var start: Vector3 = _project_screen_to_plane(_drag_start, _drag_position.y)
+		var target: Vector3 = _project_screen_to_plane(screen_position, _drag_position.y)
+		var next: Vector3 = snap_vector3(_drag_position + target - start)
+		if ArenaValidator._is_within_world_bounds(next):
+			_selected_obstacle.position = next
+	_update_selection_highlight()
+	_refresh_transform_spinboxes()
+
+func end_drag() -> void:
+	if not _dragging_selected:
+		return
+	_dragging_selected = false
+	if get_selected_obstacle() != null:
+		_selected_obstacle.rotation.y = deg_to_rad(wrapf(rad_to_deg(_selected_obstacle.rotation.y), -180.0, 180.0))
+		if _drag_snapshot != ArenaSerializer.serialize_arena(_arena):
+			_record_snapshot(_drag_snapshot)
+			is_dirty = true
+	_drag_snapshot = {}
+	_refresh_status_bar()
+
+func _input(event: InputEvent) -> void:
+	# Release over a dock still ends a drag; GUI must not swallow the transaction.
+	if _active and _dragging_selected and event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			end_drag()
+
+func _shortcut_input(event: InputEvent) -> void:
+	if _active and event is InputEventKey and event.pressed and event.ctrl_pressed and event.keycode == KEY_S:
+		save_current_arena.call_deferred()
+		get_viewport().set_input_as_handled()
+
+func reset_camera_view() -> void:
+	_editor_camera.yaw_deg = -25.0
+	_editor_camera.pitch_deg = -32.0
+	_editor_camera.focus_on(Vector3(0, 1, -12), 18.0)
+
+func focus_spawn() -> void:
+	_editor_camera.focus_on(_arena.get_spawn_position(), 18.0)
+
+func frame_arena() -> void:
+	var bounds: AABB = AABB(_arena.get_spawn_position(), Vector3.ONE)
+	for obstacle: ObstacleBase in _arena.get_obstacles():
+		bounds = bounds.merge(obstacle.transform * obstacle.get_local_bounds_aabb())
+	_editor_camera.focus_on(bounds.get_center(), maxf(12, bounds.size.length() * 1.2))
 
 func create_new_arena(
 	new_id: String = "custom_arena_001",
@@ -204,6 +313,8 @@ func create_new_arena(
 ) -> bool:
 	if _arena == null:
 		return false
+	_parameter_inspector.flush()
+	end_drag()
 	if is_dirty and not force_discard:
 		_pending_discard_action = "new"
 		if _confirm_discard_dialog != null:
@@ -232,6 +343,7 @@ func create_new_arena(
 	_arena.set_editor_mode(_active)
 
 	is_dirty = false
+	_saved_state = JSON.stringify(ArenaSerializer.serialize_arena(_arena))
 	_refresh_all_ui()
 	_set_status("Created new arena '%s'." % _arena.stage_id, false)
 	return true
@@ -242,7 +354,13 @@ func begin_placement(obstacle_type: String) -> bool:
 		_set_status("Unsupported obstacle type: %s" % obstacle_type, true)
 		return false
 	_pending_placement_type = obstacle_type
+	active_tool = Tool.PLACE
 	_ensure_3d_helpers()
+	var sample: ObstacleBase = ObstacleFactory.create_obstacle(obstacle_type)
+	sample._rebuild_obstacle()
+	_ghost_bounds = sample.get_local_bounds_aabb()
+	sample.free()
+	(_placement_ghost.mesh as BoxMesh).size = _ghost_bounds.size
 	if _placement_ghost != null:
 		_placement_ghost.visible = true
 		var col: Color = ObstacleFactory.get_indicator_color(obstacle_type)
@@ -250,14 +368,17 @@ func begin_placement(obstacle_type: String) -> bool:
 		if _placement_ghost.material_override is StandardMaterial3D:
 			(_placement_ghost.material_override as StandardMaterial3D).albedo_color = col
 	_set_status("Placement mode: %s (Left-click 3D view to place, Esc to cancel)" % ObstacleFactory.get_display_name(obstacle_type), false)
+	_refresh_status_bar()
 	return true
 
 
 func cancel_placement() -> void:
 	_pending_placement_type = ""
+	if active_tool == Tool.PLACE:
+		active_tool = Tool.SELECT
 	if _placement_ghost != null:
 		_placement_ghost.visible = false
-	_set_status("Placement cancelled.", false)
+	_refresh_status_bar()
 
 
 func place_obstacle_at(
@@ -343,9 +464,18 @@ static func resolve_owning_obstacle(node: Node) -> ObstacleBase:
 
 
 func select_obstacle(obs: ObstacleBase) -> void:
+	if _parameter_inspector != null:
+		_parameter_inspector.flush()
+	end_drag()
+	_marker_selection = ""
+	var old_selection: ObstacleBase = get_selected_obstacle()
+	if old_selection != null and old_selection.geometry_changed.is_connected(_on_geometry_changed):
+		old_selection.geometry_changed.disconnect(_on_geometry_changed)
 	if obs != null and not is_instance_valid(obs):
 		obs = null
 	_selected_obstacle = obs
+	if obs != null and not obs.geometry_changed.is_connected(_on_geometry_changed):
+		obs.geometry_changed.connect(_on_geometry_changed)
 	_update_selection_highlight()
 	_refresh_inspector_ui()
 	_refresh_route_selection_ui()
@@ -356,6 +486,10 @@ func select_obstacle(obs: ObstacleBase) -> void:
 		)
 	else:
 		_set_status("Selection cleared.", false)
+
+func _on_geometry_changed(obstacle: ObstacleBase) -> void:
+	if obstacle == get_selected_obstacle():
+		_update_selection_highlight()
 
 
 func focus_camera_on_selection() -> void:
@@ -391,6 +525,8 @@ func move_selected_obstacle(new_pos: Vector3, apply_snap: bool = false) -> bool:
 		_set_status("Position outside allowed world bounds.", true)
 		return false
 
+	if sel.position.is_equal_approx(target_pos):
+		return true
 	_push_undo_snapshot()
 	sel.position = target_pos
 	sel.reset_obstacle()
@@ -412,6 +548,8 @@ func rotate_selected_obstacle(new_rot_y_deg: float, apply_snap: bool = false) ->
 
 	var target_deg: float = snappedf(new_rot_y_deg, snap_rotation_deg) if (apply_snap and snap_enabled) else new_rot_y_deg
 	target_deg = clampf(target_deg, -360.0, 360.0)
+	if is_equal_approx(rad_to_deg(sel.rotation.y), target_deg):
+		return true
 
 	_push_undo_snapshot()
 	sel.rotation = Vector3(0.0, deg_to_rad(target_deg), 0.0)
@@ -450,10 +588,14 @@ func update_selected_parameters(new_params: Dictionary) -> bool:
 		return false
 
 	var snapshot: Dictionary = ArenaSerializer.serialize_arena(_arena)
+	var previous: Dictionary = sel.get_parameters()
 	if not sel.apply_parameters(new_params):
+		push_warning("PARAMETER_EDIT id=%s type=%s attempted=%s validation=false rebuild_started=false rebuild_completed=false" % [sel.instance_id, sel.obstacle_type, str(new_params)])
 		_set_status("Invalid parameter value rejected for '%s'." % sel.get_obstacle_instance_id(), true)
 		_refresh_inspector_ui()
 		return false
+	if previous == sel.get_parameters():
+		return true
 
 	_record_snapshot(snapshot)
 	sel.set_editor_mode(_active)
@@ -479,6 +621,7 @@ func set_selected_obstacle_enabled(enabled_flag: bool) -> bool:
 
 
 func duplicate_selected_obstacle(offset: Vector3 = Vector3(1.5, 0.0, -2.0)) -> ObstacleBase:
+	_parameter_inspector.flush()
 	var sel: ObstacleBase = get_selected_obstacle()
 	if sel == null or _arena == null:
 		return null
@@ -515,6 +658,7 @@ func duplicate_selected_obstacle(offset: Vector3 = Vector3(1.5, 0.0, -2.0)) -> O
 
 
 func delete_selected_obstacle() -> bool:
+	_parameter_inspector.flush()
 	var sel: ObstacleBase = get_selected_obstacle()
 	if sel == null or _arena == null:
 		return false
@@ -549,11 +693,11 @@ func set_spawn_transform(pos: Vector3, rot_y_deg: float) -> bool:
 	return true
 
 
-func set_finish_transform(pos: Vector3, rot_y_deg: float, size: Vector3) -> bool:
+func set_finish_transform(pos: Vector3, rot_y_deg: float, dimensions: Vector3) -> bool:
 	if _arena == null:
 		return false
 	var snapshot: Dictionary = ArenaSerializer.serialize_arena(_arena)
-	if not _arena.set_finish_transform_data(pos, rot_y_deg, size):
+	if not _arena.set_finish_transform_data(pos, rot_y_deg, dimensions):
 		_set_status("Invalid FinishZone transform/size rejected.", true)
 		_refresh_spawn_finish_ui()
 		return false
@@ -592,7 +736,7 @@ func set_custom_route_order(new_route: Array[String]) -> bool:
 	return true
 
 
-func set_arena_metadata(new_id: String, new_name: String, new_time_limit_sec: float) -> bool:
+func set_arena_metadata(new_id: String, new_name: String, new_time_limit_sec: float, new_theme: String = "") -> bool:
 	if _arena == null:
 		return false
 	if not ArenaValidator.is_safe_identifier(new_id, 64):
@@ -606,10 +750,17 @@ func set_arena_metadata(new_id: String, new_name: String, new_time_limit_sec: fl
 		_set_status("Time limit must be between 10 and 600 seconds.", true)
 		return false
 
+	var theme_value: String = _arena.theme_id if new_theme.is_empty() else new_theme
+	if theme_value.length() > 32:
+		_set_status("Theme must contain 1..32 characters.", true)
+		return false
+	if _arena.stage_id == new_id and _arena.stage_name == clean_name and is_equal_approx(_arena.time_limit_sec, new_time_limit_sec) and _arena.theme_id == theme_value:
+		return true
 	_push_undo_snapshot()
 	_arena.stage_id = new_id
 	_arena.stage_name = clean_name
 	_arena.time_limit_sec = new_time_limit_sec
+	_arena.theme_id = theme_value
 	is_dirty = true
 	_refresh_all_ui()
 	return true
@@ -618,6 +769,8 @@ func set_arena_metadata(new_id: String, new_name: String, new_time_limit_sec: fl
 # --- Validation & Persistence ---
 
 func validate_current_arena(require_play_ready: bool = true) -> Dictionary:
+	_parameter_inspector.flush()
+	end_drag()
 	if _arena == null:
 		return {"valid": false, "errors": ["Arena is null."], "warnings": []}
 	var report: Dictionary = ArenaValidator.validate_arena(_arena, require_play_ready)
@@ -632,12 +785,15 @@ func validate_current_arena(require_play_ready: bool = true) -> Dictionary:
 
 
 func save_current_arena(base_dir: String = "") -> Dictionary:
+	_parameter_inspector.flush()
+	end_drag()
 	if _arena == null:
 		return {"ok": false, "errors": ["Arena is null."], "warnings": []}
 	var target_dir: String = base_dir if not base_dir.is_empty() else arena_storage_dir
 	var data: Dictionary = ArenaSerializer.serialize_arena(_arena)
 	var res: Dictionary = ArenaRepository.save_arena_data(data, target_dir)
 	if bool(res["ok"]):
+		_saved_state = JSON.stringify(ArenaSerializer.serialize_arena(_arena))
 		is_dirty = false
 		_refresh_status_bar()
 		_set_status("Saved arena '%s' to %s" % [_arena.stage_id, String(res["path"])], false)
@@ -654,6 +810,8 @@ func save_current_arena_as(
 ) -> Dictionary:
 	if _arena == null:
 		return {"ok": false, "errors": ["Arena is null."], "warnings": []}
+	_parameter_inspector.flush()
+	end_drag()
 	var target_dir: String = base_dir if not base_dir.is_empty() else arena_storage_dir
 	var data: Dictionary = ArenaSerializer.serialize_arena(_arena)
 	var res: Dictionary = ArenaRepository.save_arena_as(data, new_arena_id, new_name, target_dir)
@@ -662,6 +820,7 @@ func save_current_arena_as(
 		if not new_name.strip_edges().is_empty():
 			_arena.stage_name = new_name.strip_edges()
 		is_dirty = false
+		_saved_state = JSON.stringify(ArenaSerializer.serialize_arena(_arena))
 		_refresh_all_ui()
 		_set_status("Saved arena as '%s'." % new_arena_id, false)
 	else:
@@ -677,6 +836,8 @@ func load_arena_by_id(
 ) -> Dictionary:
 	if _arena == null:
 		return {"ok": false, "errors": ["Arena is null."], "warnings": []}
+	_parameter_inspector.flush()
+	end_drag()
 	var target_dir: String = base_dir if not base_dir.is_empty() else arena_storage_dir
 
 	if is_dirty and not force_discard:
@@ -713,12 +874,15 @@ func load_arena_from_dictionary(data: Dictionary) -> Dictionary:
 	select_obstacle(null)
 	_arena.set_editor_mode(_active)
 	is_dirty = false
+	_saved_state = JSON.stringify(ArenaSerializer.serialize_arena(_arena))
 	_refresh_all_ui()
 	_set_status("Loaded arena '%s'." % _arena.stage_id, false)
 	return apply_res
 
 
 func undo() -> bool:
+	_parameter_inspector.flush()
+	end_drag()
 	if _undo_stack.is_empty() or _arena == null:
 		return false
 	var current_snap: Dictionary = ArenaSerializer.serialize_arena(_arena)
@@ -728,7 +892,7 @@ func undo() -> bool:
 		_redo_stack.append(current_snap)
 		_arena.set_editor_mode(_active)
 		select_obstacle(_arena.get_obstacle_by_id(selected_id))
-		is_dirty = true
+		is_dirty = JSON.stringify(ArenaSerializer.serialize_arena(_arena)) != _saved_state
 		_refresh_all_ui()
 		_set_status("Undo applied.", false)
 		return true
@@ -736,6 +900,8 @@ func undo() -> bool:
 
 
 func redo() -> bool:
+	_parameter_inspector.flush()
+	end_drag()
 	if _redo_stack.is_empty() or _arena == null:
 		return false
 	var current_snap: Dictionary = ArenaSerializer.serialize_arena(_arena)
@@ -745,7 +911,7 @@ func redo() -> bool:
 		_undo_stack.append(current_snap)
 		_arena.set_editor_mode(_active)
 		select_obstacle(_arena.get_obstacle_by_id(selected_id))
-		is_dirty = true
+		is_dirty = JSON.stringify(ArenaSerializer.serialize_arena(_arena)) != _saved_state
 		_refresh_all_ui()
 		_set_status("Redo applied.", false)
 		return true
@@ -789,12 +955,8 @@ func _ensure_3d_helpers() -> void:
 	if _selection_highlight == null:
 		_selection_highlight = MeshInstance3D.new()
 		_selection_highlight.name = "_EditorSelectionHighlight"
-		var sbox: BoxMesh = BoxMesh.new()
-		sbox.size = Vector3(3.0, 2.0, 4.0)
-		_selection_highlight.mesh = sbox
 		var smat: StandardMaterial3D = StandardMaterial3D.new()
-		smat.albedo_color = Color(1.0, 0.92, 0.15, 0.28)
-		smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		smat.albedo_color = Color(1.0, 0.92, 0.15)
 		smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		smat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_selection_highlight.material_override = smat
@@ -812,8 +974,16 @@ func _update_selection_highlight() -> void:
 		return
 
 	var bounds: AABB = sel.get_local_bounds_aabb()
-	if _selection_highlight.mesh is BoxMesh:
-		(_selection_highlight.mesh as BoxMesh).size = bounds.size + Vector3(0.25, 0.25, 0.25)
+	var lines: ImmediateMesh = ImmediateMesh.new()
+	lines.surface_begin(Mesh.PRIMITIVE_LINES)
+	var box: AABB = AABB(-bounds.size * 0.5, bounds.size)
+	for index: int in range(8):
+		for bit: int in [1, 2, 4]:
+			if index & bit == 0:
+				lines.surface_add_vertex(box.get_endpoint(index))
+				lines.surface_add_vertex(box.get_endpoint(index | bit))
+	lines.surface_end()
+	_selection_highlight.mesh = lines
 	var local_center: Vector3 = bounds.position + bounds.size * 0.5
 	_selection_highlight.global_transform = sel.global_transform * Transform3D(Basis.IDENTITY, local_center)
 	_selection_highlight.visible = true
@@ -833,8 +1003,6 @@ func _project_screen_to_plane(screen_pos: Vector2, plane_y: float) -> Vector3:
 	if t <= 0.0 or t > 300.0:
 		return Vector3(NAN, NAN, NAN)
 	var hit_pt: Vector3 = origin + dir * t
-	hit_pt.x = clampf(hit_pt.x, -ArenaValidator.WORLD_XZ_LIMIT, ArenaValidator.WORLD_XZ_LIMIT)
-	hit_pt.z = clampf(hit_pt.z, -ArenaValidator.WORLD_XZ_LIMIT, ArenaValidator.WORLD_XZ_LIMIT)
 	return hit_pt
 
 
@@ -842,8 +1010,11 @@ func _update_ghost_from_screen(screen_pos: Vector2) -> void:
 	if _placement_ghost == null or _pending_placement_type.is_empty():
 		return
 	var pt: Vector3 = _project_screen_to_plane(screen_pos, placement_height)
+	var valid: bool = ArenaValidator._is_within_world_bounds(pt) and _arena.get_obstacle_count() < ArenaValidator.MAX_OBSTACLES
+	(_placement_ghost.material_override as StandardMaterial3D).albedo_color = Color(0.2, 0.9, 0.6, 0.25) if valid else Color(1.0, 0.1, 0.1, 0.4)
+	_placement_ghost.visible = is_finite(pt.x)
 	if is_finite(pt.x):
-		_placement_ghost.global_position = (snap_vector3(pt) if snap_enabled else pt) + Vector3(0.0, 0.25, -2.0)
+		_placement_ghost.global_position = (snap_vector3(pt) if snap_enabled else pt) + _ghost_bounds.get_center()
 
 
 func _is_text_entry_focused() -> bool:
@@ -864,6 +1035,7 @@ func _is_point_over_ui_panel(screen_pos: Vector2) -> bool:
 func _set_status(msg: String, is_err: bool) -> void:
 	if _status_label != null:
 		_status_label.text = msg
+		_status_label.tooltip_text = msg
 		_status_label.modulate = Color(1.0, 0.45, 0.45, 1.0) if is_err else Color(0.85, 0.95, 0.88, 1.0)
 	status_message_changed.emit(msg, is_err)
 
@@ -905,6 +1077,8 @@ func _refresh_toolbar_ui() -> void:
 		_snap_checkbox.button_pressed = snap_enabled
 	if _grid_spin != null:
 		_grid_spin.value = grid_size
+	if has_meta("theme_edit"):
+		(get_meta("theme_edit") as LineEdit).text = _arena.theme_id
 	_suppress_inspector_callbacks = false
 
 
@@ -913,7 +1087,7 @@ func _refresh_palette_ui() -> void:
 		return
 	for child: Node in _palette_container.get_children():
 		_palette_container.remove_child(child)
-		child.free()
+		child.queue_free()
 
 	for obs_type: String in ObstacleFactory.get_supported_types():
 		var row: HBoxContainer = HBoxContainer.new()
@@ -923,6 +1097,7 @@ func _refresh_palette_ui() -> void:
 		row.add_child(swatch)
 
 		var btn: Button = Button.new()
+		btn.custom_minimum_size.y = 32
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.text = "+ " + ObstacleFactory.get_display_name(obs_type)
 		btn.pressed.connect(_on_palette_button_pressed.bind(obs_type))
@@ -949,14 +1124,14 @@ func _refresh_transform_spinboxes() -> void:
 
 
 func _refresh_inspector_ui() -> void:
-	if _params_container == null:
+	if _parameter_inspector == null:
 		return
-	for child: Node in _params_container.get_children():
-		_params_container.remove_child(child)
-		child.free()
-
 	var sel: ObstacleBase = get_selected_obstacle()
 	var has_sel: bool = (sel != null)
+	_parameter_inspector.show_parameters(sel)
+	for section: String in ["obstacle_section", "spawn_section", "finish_section"]:
+		if has_meta(section):
+			(get_meta(section) as Control).visible = (has_sel if section == "obstacle_section" else _marker_selection == section.trim_suffix("_section"))
 	if _pos_x_spin != null:
 		_pos_x_spin.editable = has_sel
 		_pos_y_spin.editable = has_sel
@@ -975,55 +1150,6 @@ func _refresh_inspector_ui() -> void:
 
 	_refresh_transform_spinboxes()
 
-	var current_params: Dictionary = sel.get_parameters()
-	var descriptors: Array = ObstacleFactory.get_parameter_descriptors(sel.get_obstacle_type())
-	for desc_var: Variant in descriptors:
-		var desc: Dictionary = desc_var as Dictionary
-		var key: String = String(desc["key"])
-		var label_text: String = String(desc["label"])
-		var ptype: String = String(desc["type"])
-		var cur_val: Variant = current_params.get(key, desc.get("default"))
-
-		var row: HBoxContainer = HBoxContainer.new()
-		var lbl: Label = Label.new()
-		lbl.text = label_text
-		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(lbl)
-
-		if ptype == "float" or ptype == "int":
-			var sp: SpinBox = SpinBox.new()
-			sp.min_value = float(desc.get("min", 0.0))
-			sp.max_value = float(desc.get("max", 100.0))
-			sp.step = float(desc.get("step", 0.1 if ptype == "float" else 1.0))
-			sp.value = float(cur_val)
-			sp.value_changed.connect(_on_param_scalar_changed.bind(key, ptype == "int"))
-			row.add_child(sp)
-			_params_container.add_child(row)
-		elif ptype == "enum" or ptype == "dir_int":
-			var opt: OptionButton = OptionButton.new()
-			var options: Array = desc.get("options", []) as Array
-			for idx: int in range(options.size()):
-				var ov: Variant = options[idx]
-				opt.add_item(str(ov))
-				if str(ov) == str(cur_val):
-					opt.selected = idx
-			opt.item_selected.connect(_on_param_option_selected.bind(key, options, ptype == "dir_int"))
-			row.add_child(opt)
-			_params_container.add_child(row)
-		elif ptype == "vec3":
-			_params_container.add_child(row)
-			var vec_row: HBoxContainer = HBoxContainer.new()
-			var arr: Array = cur_val as Array if cur_val is Array else [1.0, 1.0, 1.0]
-			for axis: int in range(3):
-				var vsp: SpinBox = SpinBox.new()
-				vsp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				vsp.min_value = float(desc.get("min", 0.1))
-				vsp.max_value = float(desc.get("max", 20.0))
-				vsp.step = float(desc.get("step", 0.1))
-				vsp.value = float(arr[axis])
-				vsp.value_changed.connect(_on_param_vec3_axis_changed.bind(key, axis))
-				vec_row.add_child(vsp)
-			_params_container.add_child(vec_row)
 
 
 func _refresh_route_ui() -> void:
@@ -1079,66 +1205,45 @@ func _refresh_spawn_finish_ui() -> void:
 
 
 func _refresh_status_bar() -> void:
+	if has_meta("tool_buttons"):
+		var buttons: Array = get_meta("tool_buttons") as Array
+		for index: int in range(buttons.size()):
+			(buttons[index] as Button).set_pressed_no_signal(index == active_tool)
 	if _dirty_label != null and _arena != null:
-		var dirty_tag: String = " *UNSAVED*" if is_dirty else " [SAVED]"
-		_dirty_label.text = "MODE: EDIT | Arena: %s%s | Obstacles: %d/%d | Snap: %s (%.2fm)" % [
-			_arena.stage_id,
-			dirty_tag,
-			_arena.get_obstacle_count(),
-			ArenaValidator.MAX_OBSTACLES,
-			"ON" if snap_enabled else "OFF",
-			grid_size,
-		]
+		var selected: ObstacleBase = get_selected_obstacle()
+		_dirty_label.text = "EDIT | %s | %s | Snap %s %.2fm | %s" % [Tool.keys()[active_tool], selected.instance_id if selected != null else _marker_selection, "ON" if snap_enabled else "OFF", grid_size, "Unsaved" if is_dirty else "Saved"]
 
 
 # --- UI Signal Callbacks ---
 
 func _on_palette_button_pressed(obs_type: String) -> void:
-	var center_pos: Vector3 = Vector3(0.0, placement_height, -8.0)
-	if _editor_camera != null:
-		center_pos = Vector3(_editor_camera.focus_point.x, placement_height, _editor_camera.focus_point.z)
-	place_obstacle_at(obs_type, center_pos, 0.0, true)
 	begin_placement(obs_type)
 
 
 func _on_transform_spin_changed(_val: float) -> void:
 	if _suppress_inspector_callbacks or get_selected_obstacle() == null:
 		return
+	# Transform fields commit together after Enter/focus exit (wired by layout).
 	var target_pos: Vector3 = Vector3(_pos_x_spin.value, _pos_y_spin.value, _pos_z_spin.value)
-	move_selected_obstacle(target_pos, false)
-	rotate_selected_obstacle(_rot_y_spin.value, false)
+	var target_rotation: float = _rot_y_spin.value
+	if not ArenaValidator._is_within_world_bounds(target_pos) or not is_finite(target_rotation) or absf(target_rotation) > 360:
+		_set_status("Invalid transform. Previous values preserved.", true)
+		_refresh_transform_spinboxes()
+		return
+	var before: Dictionary = ArenaSerializer.serialize_arena(_arena)
+	_selected_obstacle.position = target_pos
+	_selected_obstacle.rotation.y = deg_to_rad(target_rotation)
+	if before != ArenaSerializer.serialize_arena(_arena):
+		_record_snapshot(before)
+		is_dirty = true
+	_update_selection_highlight()
+	_refresh_status_bar()
 
 
 func _on_enabled_toggled(toggled_on: bool) -> void:
 	if _suppress_inspector_callbacks:
 		return
 	set_selected_obstacle_enabled(toggled_on)
-
-
-func _on_param_scalar_changed(new_val: float, as_int: bool, key: String) -> void:
-	if _suppress_inspector_callbacks:
-		return
-	if as_int:
-		update_selected_parameter(key, int(roundf(new_val)))
-	else:
-		update_selected_parameter(key, new_val)
-
-
-func _on_param_option_selected(idx: int, key: String, options: Array, as_int: bool) -> void:
-	if _suppress_inspector_callbacks or idx < 0 or idx >= options.size():
-		return
-	var val: Variant = int(options[idx]) if as_int else str(options[idx])
-	update_selected_parameter(key, val)
-
-
-func _on_param_vec3_axis_changed(new_val: float, key: String, axis: int) -> void:
-	if _suppress_inspector_callbacks or get_selected_obstacle() == null:
-		return
-	var cur_params: Dictionary = get_selected_obstacle().get_parameters()
-	var arr: Array = (cur_params.get(key, [1.0, 1.0, 1.0]) as Array).duplicate()
-	if axis >= 0 and axis < 3:
-		arr[axis] = new_val
-		update_selected_parameter(key, arr)
 
 
 func _on_route_item_selected(index: int) -> void:
@@ -1165,24 +1270,24 @@ func _on_route_move_down_pressed() -> void:
 func _on_apply_spawn_finish_pressed() -> void:
 	if _suppress_inspector_callbacks or _arena == null:
 		return
-	set_spawn_transform(
-		Vector3(_spawn_x_spin.value, _spawn_y_spin.value, _spawn_z_spin.value),
-		_spawn_rot_spin.value
-	)
-	set_finish_transform(
-		Vector3(_finish_x_spin.value, _finish_y_spin.value, _finish_z_spin.value),
-		_finish_rot_spin.value,
-		Vector3(_finish_sx_spin.value, _finish_sy_spin.value, _finish_sz_spin.value)
-	)
+	if _marker_selection == "spawn":
+		set_spawn_transform(Vector3(_spawn_x_spin.value, _spawn_y_spin.value, _spawn_z_spin.value), _spawn_rot_spin.value)
+	elif _marker_selection == "finish":
+		set_finish_transform(Vector3(_finish_x_spin.value, _finish_y_spin.value, _finish_z_spin.value), _finish_rot_spin.value, Vector3(_finish_sx_spin.value, _finish_sy_spin.value, _finish_sz_spin.value))
 
 
 func _on_apply_metadata_pressed() -> void:
 	if _toolbar_arena_id_edit == null or _toolbar_arena_name_edit == null or _toolbar_time_limit_spin == null:
 		return
+	var theme_value: String = (get_meta("theme_edit") as LineEdit).text.strip_edges() if has_meta("theme_edit") else "default"
+	if theme_value.is_empty() or theme_value.length() > 32:
+		_set_status("Theme must contain 1..32 characters.", true)
+		return
 	set_arena_metadata(
 		_toolbar_arena_id_edit.text.strip_edges(),
 		_toolbar_arena_name_edit.text.strip_edges(),
-		_toolbar_time_limit_spin.value
+		_toolbar_time_limit_spin.value,
+		theme_value
 	)
 
 
@@ -1233,344 +1338,4 @@ func _on_confirm_discard_confirmed() -> void:
 
 
 func _build_editor_ui_if_needed() -> void:
-	if get_node_or_null("TopToolbar") != null:
-		return
-
-	# Top Toolbar
-	var top_panel: PanelContainer = PanelContainer.new()
-	top_panel.name = "TopToolbar"
-	top_panel.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	top_panel.offset_bottom = 44.0
-	add_child(top_panel)
-
-	var top_hbox: HBoxContainer = HBoxContainer.new()
-	top_hbox.add_theme_constant_override("separation", 8)
-	top_panel.add_child(top_hbox)
-
-	var title_lbl: Label = Label.new()
-	title_lbl.text = " ARENA EDITOR "
-	top_hbox.add_child(title_lbl)
-
-	var new_btn: Button = Button.new()
-	new_btn.text = "New"
-	new_btn.pressed.connect(create_new_arena.bind("custom_arena_001", "Custom Ninja Course", false))
-	top_hbox.add_child(new_btn)
-
-	var open_btn: Button = Button.new()
-	open_btn.text = "Open / Save As"
-	open_btn.pressed.connect(_on_open_file_dialog_pressed)
-	top_hbox.add_child(open_btn)
-
-	var save_btn: Button = Button.new()
-	save_btn.text = "Save (Ctrl+S)"
-	save_btn.pressed.connect(save_current_arena.bind(""))
-	top_hbox.add_child(save_btn)
-
-	var val_btn: Button = Button.new()
-	val_btn.text = "Validate"
-	val_btn.pressed.connect(validate_current_arena.bind(true))
-	top_hbox.add_child(val_btn)
-
-	_toolbar_arena_id_edit = LineEdit.new()
-	_toolbar_arena_id_edit.placeholder_text = "arena_id"
-	_toolbar_arena_id_edit.custom_minimum_size = Vector2(120, 0)
-	top_hbox.add_child(_toolbar_arena_id_edit)
-
-	_toolbar_arena_name_edit = LineEdit.new()
-	_toolbar_arena_name_edit.placeholder_text = "Arena Name"
-	_toolbar_arena_name_edit.custom_minimum_size = Vector2(150, 0)
-	top_hbox.add_child(_toolbar_arena_name_edit)
-
-	_toolbar_time_limit_spin = SpinBox.new()
-	_toolbar_time_limit_spin.min_value = 10.0
-	_toolbar_time_limit_spin.max_value = 600.0
-	_toolbar_time_limit_spin.step = 5.0
-	_toolbar_time_limit_spin.value = 120.0
-	_toolbar_time_limit_spin.suffix = "s"
-	top_hbox.add_child(_toolbar_time_limit_spin)
-
-	var meta_btn: Button = Button.new()
-	meta_btn.text = "Set Meta"
-	meta_btn.pressed.connect(_on_apply_metadata_pressed)
-	top_hbox.add_child(meta_btn)
-
-	_snap_checkbox = CheckBox.new()
-	_snap_checkbox.text = "Snap"
-	_snap_checkbox.button_pressed = true
-	_snap_checkbox.toggled.connect(func(on: bool) -> void:
-		snap_enabled = on
-		_refresh_status_bar()
-	)
-	top_hbox.add_child(_snap_checkbox)
-
-	_grid_spin = SpinBox.new()
-	_grid_spin.min_value = 0.1
-	_grid_spin.max_value = 5.0
-	_grid_spin.step = 0.1
-	_grid_spin.value = 0.5
-	_grid_spin.suffix = "m"
-	_grid_spin.value_changed.connect(func(v: float) -> void:
-		grid_size = v
-		_refresh_status_bar()
-	)
-	top_hbox.add_child(_grid_spin)
-
-	var test_play_btn: Button = Button.new()
-	test_play_btn.text = "Test Play (F2)"
-	test_play_btn.pressed.connect(func() -> void: test_play_requested.emit())
-	top_hbox.add_child(test_play_btn)
-
-	# Left Dock (Palette + Route + Validation)
-	var left_dock: PanelContainer = PanelContainer.new()
-	left_dock.name = "LeftDock"
-	left_dock.set_anchors_preset(Control.PRESET_LEFT_WIDE)
-	left_dock.offset_top = 48.0
-	left_dock.offset_bottom = -36.0
-	left_dock.offset_right = 250.0
-	add_child(left_dock)
-
-	var left_scroll: ScrollContainer = ScrollContainer.new()
-	left_dock.add_child(left_scroll)
-
-	var left_vbox: VBoxContainer = VBoxContainer.new()
-	left_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left_vbox.add_theme_constant_override("separation", 6)
-	left_scroll.add_child(left_vbox)
-
-	var pal_lbl: Label = Label.new()
-	pal_lbl.text = "OBSTACLE PALETTE"
-	left_vbox.add_child(pal_lbl)
-
-	_palette_container = VBoxContainer.new()
-	left_vbox.add_child(_palette_container)
-
-	var act_row: HBoxContainer = HBoxContainer.new()
-	var dup_btn: Button = Button.new()
-	dup_btn.text = "Duplicate (Ctrl+D)"
-	dup_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	dup_btn.pressed.connect(func() -> void: duplicate_selected_obstacle())
-	act_row.add_child(dup_btn)
-
-	var del_btn: Button = Button.new()
-	del_btn.text = "Delete (Del)"
-	del_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	del_btn.pressed.connect(func() -> void: delete_selected_obstacle())
-	act_row.add_child(del_btn)
-	left_vbox.add_child(act_row)
-
-	var route_lbl: Label = Label.new()
-	route_lbl.text = "ORDERED ROUTE"
-	left_vbox.add_child(route_lbl)
-
-	_route_list = ItemList.new()
-	_route_list.custom_minimum_size = Vector2(0, 130)
-	_route_list.item_selected.connect(_on_route_item_selected)
-	left_vbox.add_child(_route_list)
-
-	var route_btns: HBoxContainer = HBoxContainer.new()
-	var up_btn: Button = Button.new()
-	up_btn.text = "Move Up"
-	up_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	up_btn.pressed.connect(_on_route_move_up_pressed)
-	route_btns.add_child(up_btn)
-
-	var down_btn: Button = Button.new()
-	down_btn.text = "Move Down"
-	down_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	down_btn.pressed.connect(_on_route_move_down_pressed)
-	route_btns.add_child(down_btn)
-	left_vbox.add_child(route_btns)
-
-	var val_title: Label = Label.new()
-	val_title.text = "VALIDATION REPORT"
-	left_vbox.add_child(val_title)
-
-	_validation_label = RichTextLabel.new()
-	_validation_label.custom_minimum_size = Vector2(0, 110)
-	_validation_label.text = "Click Validate to inspect course."
-	left_vbox.add_child(_validation_label)
-
-	# Right Dock (Inspector + Spawn/Finish)
-	var right_dock: PanelContainer = PanelContainer.new()
-	right_dock.name = "RightDock"
-	right_dock.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
-	right_dock.offset_top = 48.0
-	right_dock.offset_bottom = -36.0
-	right_dock.offset_left = -290.0
-	add_child(right_dock)
-
-	var right_scroll: ScrollContainer = ScrollContainer.new()
-	right_dock.add_child(right_scroll)
-
-	var right_vbox: VBoxContainer = VBoxContainer.new()
-	right_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right_vbox.add_theme_constant_override("separation", 6)
-	right_scroll.add_child(right_vbox)
-
-	_inspector_title_label = Label.new()
-	_inspector_title_label.text = "INSPECTOR"
-	right_vbox.add_child(_inspector_title_label)
-
-	_enabled_checkbox = CheckBox.new()
-	_enabled_checkbox.text = "Obstacle Enabled"
-	_enabled_checkbox.button_pressed = true
-	_enabled_checkbox.toggled.connect(_on_enabled_toggled)
-	right_vbox.add_child(_enabled_checkbox)
-
-	var pos_lbl: Label = Label.new()
-	pos_lbl.text = "Position (X, Y, Z) & Rot Y:"
-	right_vbox.add_child(pos_lbl)
-
-	var pos_row: HBoxContainer = HBoxContainer.new()
-	_pos_x_spin = _make_coord_spin(-250.0, 250.0, 0.25)
-	_pos_y_spin = _make_coord_spin(-10.0, 100.0, 0.25)
-	_pos_z_spin = _make_coord_spin(-250.0, 250.0, 0.25)
-	pos_row.add_child(_pos_x_spin)
-	pos_row.add_child(_pos_y_spin)
-	pos_row.add_child(_pos_z_spin)
-	right_vbox.add_child(pos_row)
-
-	var rot_row: HBoxContainer = HBoxContainer.new()
-	_rot_y_spin = _make_coord_spin(-360.0, 360.0, 5.0)
-	rot_row.add_child(_rot_y_spin)
-	var rst_pos_btn: Button = Button.new()
-	rst_pos_btn.text = "Rst Pos"
-	rst_pos_btn.pressed.connect(reset_selected_position)
-	rot_row.add_child(rst_pos_btn)
-	var rst_rot_btn: Button = Button.new()
-	rst_rot_btn.text = "Rst Rot"
-	rst_rot_btn.pressed.connect(reset_selected_rotation)
-	rot_row.add_child(rst_rot_btn)
-	right_vbox.add_child(rot_row)
-
-	var p_hdr: Label = Label.new()
-	p_hdr.text = "OBSTACLE PARAMETERS"
-	right_vbox.add_child(p_hdr)
-
-	_params_container = VBoxContainer.new()
-	right_vbox.add_child(_params_container)
-
-	var sf_hdr: Label = Label.new()
-	sf_hdr.text = "SPAWN & FINISH EDITOR"
-	right_vbox.add_child(sf_hdr)
-
-	var sp_row: HBoxContainer = HBoxContainer.new()
-	_spawn_x_spin = _make_coord_spin(-250.0, 250.0, 0.5, false)
-	_spawn_y_spin = _make_coord_spin(-10.0, 100.0, 0.5, false)
-	_spawn_z_spin = _make_coord_spin(-250.0, 250.0, 0.5, false)
-	_spawn_rot_spin = _make_coord_spin(-360.0, 360.0, 15.0, false)
-	sp_row.add_child(_spawn_x_spin)
-	sp_row.add_child(_spawn_y_spin)
-	sp_row.add_child(_spawn_z_spin)
-	sp_row.add_child(_spawn_rot_spin)
-	right_vbox.add_child(sp_row)
-
-	var fn_row: HBoxContainer = HBoxContainer.new()
-	_finish_x_spin = _make_coord_spin(-250.0, 250.0, 0.5, false)
-	_finish_y_spin = _make_coord_spin(-10.0, 100.0, 0.5, false)
-	_finish_z_spin = _make_coord_spin(-250.0, 250.0, 0.5, false)
-	_finish_rot_spin = _make_coord_spin(-360.0, 360.0, 15.0, false)
-	fn_row.add_child(_finish_x_spin)
-	fn_row.add_child(_finish_y_spin)
-	fn_row.add_child(_finish_z_spin)
-	fn_row.add_child(_finish_rot_spin)
-	right_vbox.add_child(fn_row)
-
-	var fs_row: HBoxContainer = HBoxContainer.new()
-	_finish_sx_spin = _make_coord_spin(1.0, 20.0, 0.2, false)
-	_finish_sy_spin = _make_coord_spin(1.0, 20.0, 0.2, false)
-	_finish_sz_spin = _make_coord_spin(1.0, 20.0, 0.2, false)
-	fs_row.add_child(_finish_sx_spin)
-	fs_row.add_child(_finish_sy_spin)
-	fs_row.add_child(_finish_sz_spin)
-	right_vbox.add_child(fs_row)
-
-	var apply_sf_btn: Button = Button.new()
-	apply_sf_btn.text = "Apply Spawn & Finish"
-	apply_sf_btn.pressed.connect(_on_apply_spawn_finish_pressed)
-	right_vbox.add_child(apply_sf_btn)
-
-	# Bottom Status Bar
-	var bottom_panel: PanelContainer = PanelContainer.new()
-	bottom_panel.name = "BottomBar"
-	bottom_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	bottom_panel.offset_top = -32.0
-	add_child(bottom_panel)
-
-	var bottom_hbox: HBoxContainer = HBoxContainer.new()
-	bottom_panel.add_child(bottom_hbox)
-
-	_dirty_label = Label.new()
-	_dirty_label.text = "MODE: EDIT"
-	bottom_hbox.add_child(_dirty_label)
-
-	var sep: Control = Control.new()
-	sep.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bottom_hbox.add_child(sep)
-
-	_status_label = Label.new()
-	_status_label.text = "Ready."
-	bottom_hbox.add_child(_status_label)
-
-	# File Open / Save As Modal Panel
-	_file_dialog_panel = PanelContainer.new()
-	_file_dialog_panel.name = "FileDialogPanel"
-	_file_dialog_panel.visible = false
-	_file_dialog_panel.custom_minimum_size = Vector2(420, 320)
-	_file_dialog_panel.set_anchors_preset(Control.PRESET_CENTER)
-	add_child(_file_dialog_panel)
-
-	var fd_vbox: VBoxContainer = VBoxContainer.new()
-	fd_vbox.add_theme_constant_override("separation", 8)
-	_file_dialog_panel.add_child(fd_vbox)
-
-	var fd_title: Label = Label.new()
-	fd_title.text = "OPEN / SAVE AS ARENA (user://arenas/)"
-	fd_vbox.add_child(fd_title)
-
-	_file_list = ItemList.new()
-	_file_list.custom_minimum_size = Vector2(0, 140)
-	fd_vbox.add_child(_file_list)
-
-	var load_btn: Button = Button.new()
-	load_btn.text = "Load Selected Arena"
-	load_btn.pressed.connect(_on_load_selected_file_pressed)
-	fd_vbox.add_child(load_btn)
-
-	_save_as_id_edit = LineEdit.new()
-	_save_as_id_edit.placeholder_text = "New arena_id (e.g. custom_stage_01)"
-	fd_vbox.add_child(_save_as_id_edit)
-
-	_save_as_name_edit = LineEdit.new()
-	_save_as_name_edit.placeholder_text = "New Arena Display Name"
-	fd_vbox.add_child(_save_as_name_edit)
-
-	var fd_btns: HBoxContainer = HBoxContainer.new()
-	var sa_btn: Button = Button.new()
-	sa_btn.text = "Save As"
-	sa_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sa_btn.pressed.connect(_on_save_as_confirm_pressed)
-	fd_btns.add_child(sa_btn)
-
-	var close_fd_btn: Button = Button.new()
-	close_fd_btn.text = "Close"
-	close_fd_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	close_fd_btn.pressed.connect(func() -> void: _file_dialog_panel.visible = false)
-	fd_btns.add_child(close_fd_btn)
-	fd_vbox.add_child(fd_btns)
-
-	_confirm_discard_dialog = ConfirmationDialog.new()
-	_confirm_discard_dialog.title = "Unsaved Arena Changes"
-	_confirm_discard_dialog.confirmed.connect(_on_confirm_discard_confirmed)
-	add_child(_confirm_discard_dialog)
-
-
-func _make_coord_spin(min_v: float, max_v: float, step_v: float, bind_selected: bool = true) -> SpinBox:
-	var sp: SpinBox = SpinBox.new()
-	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sp.min_value = min_v
-	sp.max_value = max_v
-	sp.step = step_v
-	if bind_selected:
-		sp.value_changed.connect(_on_transform_spin_changed)
-	return sp
+	EditorLayout.build(self)
