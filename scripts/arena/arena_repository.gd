@@ -118,15 +118,24 @@ static func save_arena_data(data: Dictionary, base_dir: String = DEFAULT_ARENA_D
 			"errors": ["Could not open temporary file for writing: " + tmp_path],
 			"warnings": [],
 		}
-	tmp_file.store_string(json_str)
+	tmp_file.store_buffer(bytes)
+	var write_error: Error = tmp_file.get_error()
 	tmp_file.flush()
+	if write_error == OK:
+		write_error = tmp_file.get_error()
 	tmp_file = null
+	if write_error != OK:
+		return {
+			"ok": false,
+			"path": "",
+			"errors": ["Could not write temporary arena file: %s (%s)." % [tmp_path, error_string(write_error)]],
+			"warnings": [],
+		}
 
 	# Verify temporary file integrity before replacing existing file
-	var check_read: String = FileAccess.get_file_as_string(tmp_path)
-	var verify_parsed: Dictionary = ArenaSerializer.from_json_string(check_read, false)
-	if not bool(verify_parsed["ok"]):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp_path))
+	var check_bytes: PackedByteArray = FileAccess.get_file_as_bytes(tmp_path)
+	var verify_parsed: Dictionary = ArenaSerializer.from_json_string(check_bytes.get_string_from_utf8(), false)
+	if check_bytes != bytes or not bool(verify_parsed["ok"]):
 		return {
 			"ok": false,
 			"path": "",
@@ -134,29 +143,33 @@ static func save_arena_data(data: Dictionary, base_dir: String = DEFAULT_ARENA_D
 			"warnings": [],
 		}
 
-	# Rotate existing valid file to .bak before replacing
-	if FileAccess.file_exists(target_path):
-		var existing_text: String = FileAccess.get_file_as_string(target_path)
-		var bak_file: FileAccess = FileAccess.open(bak_path, FileAccess.WRITE)
-		if bak_file != null:
-			bak_file.store_string(existing_text)
-			bak_file.flush()
-			bak_file = null
+	# Copy the original bytes; never truncate the target to save or back it up.
+	var had_target: bool = FileAccess.file_exists(target_path)
+	if had_target:
+		var backup_error: Error = DirAccess.copy_absolute(ProjectSettings.globalize_path(target_path), ProjectSettings.globalize_path(bak_path))
+		if backup_error != OK:
+			return {
+				"ok": false,
+				"path": "",
+				"errors": ["Could not back up arena file: %s (%s)." % [bak_path, error_string(backup_error)]],
+				"warnings": [],
+			}
 
-	var final_file: FileAccess = FileAccess.open(target_path, FileAccess.WRITE)
-	if final_file == null:
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp_path))
+	var rename_error: Error = DirAccess.rename_absolute(ProjectSettings.globalize_path(tmp_path), ProjectSettings.globalize_path(target_path))
+	if rename_error != OK:
+		var errors: Array[String] = ["Could not replace arena file: %s (%s)." % [target_path, error_string(rename_error)]]
+		# ponytail: Windows rename deletes before moving; restore a missing target, not an existing one. Native atomic replacement needs engine support.
+		if had_target and not FileAccess.file_exists(target_path):
+			var restore_error: Error = DirAccess.copy_absolute(ProjectSettings.globalize_path(bak_path), ProjectSettings.globalize_path(target_path))
+			if restore_error != OK:
+				errors.append("Could not restore arena file; backup retained at %s (%s)." % [bak_path, error_string(restore_error)])
 		return {
 			"ok": false,
 			"path": "",
-			"errors": ["Could not write final arena file: " + target_path],
+			"errors": errors,
 			"warnings": [],
 		}
-	final_file.store_string(json_str)
-	final_file.flush()
-	final_file = null
 
-	DirAccess.remove_absolute(ProjectSettings.globalize_path(tmp_path))
 	return {
 		"ok": true,
 		"path": target_path,
