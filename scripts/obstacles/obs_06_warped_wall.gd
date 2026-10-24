@@ -40,14 +40,11 @@ func get_top_deck_body() -> StaticBody3D:
 
 func _rebuild_obstacle() -> void:
 	_cache_common_nodes()
+	_localize_geometry_resources()
 	if _geometry_root == null:
 		_geometry_root = get_node_or_null("GeometryRoot") as Node3D
 	if _geometry_root == null:
 		return
-
-	for child: Node in _geometry_root.get_children():
-		_geometry_root.remove_child(child)
-		child.free()
 
 	if _ramp_material == null:
 		_ramp_material = StandardMaterial3D.new()
@@ -125,29 +122,27 @@ func _create_slab(
 	pitch_rad: float,
 	mat: StandardMaterial3D
 ) -> void:
-	var body: StaticBody3D = StaticBody3D.new()
-	body.name = slab_name
-	body.collision_layer = 5
-	body.collision_mask = 0
+	var body: StaticBody3D = _geometry_root.get_node_or_null(NodePath(slab_name)) as StaticBody3D
+	if body == null:
+		body = StaticBody3D.new()
+		body.name = slab_name
+		body.collision_layer = 5
+		body.collision_mask = 0
+		var mesh_inst: MeshInstance3D = MeshInstance3D.new()
+		mesh_inst.name = "MeshInstance3D"
+		var box_mesh: BoxMesh = BoxMesh.new()
+		box_mesh.material = mat
+		mesh_inst.mesh = box_mesh
+		body.add_child(mesh_inst)
+		var col: CollisionShape3D = CollisionShape3D.new()
+		col.name = "CollisionShape3D"
+		col.shape = BoxShape3D.new()
+		body.add_child(col)
+		_geometry_root.add_child(body)
 	body.position = pos
 	body.rotation = Vector3(pitch_rad, 0.0, 0.0)
-
-	var mesh_inst: MeshInstance3D = MeshInstance3D.new()
-	mesh_inst.name = "MeshInstance3D"
-	var box_mesh: BoxMesh = BoxMesh.new()
-	box_mesh.size = dims
-	box_mesh.material = mat
-	mesh_inst.mesh = box_mesh
-	body.add_child(mesh_inst)
-
-	var col: CollisionShape3D = CollisionShape3D.new()
-	col.name = "CollisionShape3D"
-	var box_shape: BoxShape3D = BoxShape3D.new()
-	box_shape.size = dims
-	col.shape = box_shape
-	body.add_child(col)
-
-	_geometry_root.add_child(body)
+	(body.get_node("MeshInstance3D").mesh as BoxMesh).size = dims
+	(body.get_node("CollisionShape3D").shape as BoxShape3D).size = dims
 
 
 func _validate_parameters() -> bool:

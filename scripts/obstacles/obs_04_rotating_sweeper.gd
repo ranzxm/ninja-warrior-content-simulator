@@ -88,6 +88,7 @@ func _apply_sweeper_push(player: PlayerController, dir_sign: float) -> void:
 
 func _rebuild_obstacle() -> void:
 	_cache_common_nodes()
+	_localize_geometry_resources()
 	if _sweeper_pivot == null:
 		_sweeper_pivot = get_node_or_null("SweeperPivot") as AnimatableBody3D
 	if _arm_mesh_inst == null:
@@ -103,21 +104,18 @@ func _rebuild_obstacle() -> void:
 	if _arm_mesh_inst != null:
 		_arm_mesh_inst.position = Vector3(0.0, arm_height, 0.0)
 		if _arm_mesh_inst.mesh is BoxMesh:
-			var bm: BoxMesh = (_arm_mesh_inst.mesh as BoxMesh).duplicate() as BoxMesh
+			var bm: BoxMesh = _arm_mesh_inst.mesh as BoxMesh
 			bm.size = arm_dims
-			_arm_mesh_inst.mesh = bm
 	if _arm_col_shape != null:
 		_arm_col_shape.position = Vector3(0.0, arm_height, 0.0)
 		if _arm_col_shape.shape is BoxShape3D:
-			var bs: BoxShape3D = (_arm_col_shape.shape as BoxShape3D).duplicate() as BoxShape3D
+			var bs: BoxShape3D = _arm_col_shape.shape as BoxShape3D
 			bs.size = arm_dims
-			_arm_col_shape.shape = bs
 	if _push_area != null:
 		_push_area.position = Vector3(0.0, arm_height, 0.0)
 	if _push_col_shape != null and _push_col_shape.shape is BoxShape3D:
-		var ps: BoxShape3D = (_push_col_shape.shape as BoxShape3D).duplicate() as BoxShape3D
+		var ps: BoxShape3D = _push_col_shape.shape as BoxShape3D
 		ps.size = Vector3(arm_length, 0.34, 0.42)
-		_push_col_shape.shape = ps
 
 	if entry_anchor != null:
 		entry_anchor.position = Vector3.ZERO

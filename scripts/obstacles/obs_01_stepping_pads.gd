@@ -42,14 +42,15 @@ func get_pad_bodies() -> Array[StaticBody3D]:
 
 func _rebuild_obstacle() -> void:
 	_cache_common_nodes()
+	_localize_geometry_resources()
 	if _pads_container == null:
 		_pads_container = get_node_or_null("PadsContainer") as Node3D
 	if _pads_container == null:
 		return
 
-	for child: Node in _pads_container.get_children():
-		_pads_container.remove_child(child)
-		child.free()
+	var bodies: Array[StaticBody3D] = get_pad_bodies()
+	while bodies.size() > pad_count:
+		_retire_geometry_node(bodies.pop_back() as StaticBody3D)
 
 	if _pad_material == null:
 		_pad_material = StandardMaterial3D.new()
@@ -58,10 +59,25 @@ func _rebuild_obstacle() -> void:
 
 	var step_z: float = pad_dimensions.z + gap_distance
 	for i: int in range(pad_count):
-		var pad_body: StaticBody3D = StaticBody3D.new()
-		pad_body.name = "Pad_%02d" % (i + 1)
-		pad_body.collision_layer = 5 # WORLD (1) | OBSTACLE (4)
-		pad_body.collision_mask = 0
+		var pad_body: StaticBody3D
+		if i < bodies.size():
+			pad_body = bodies[i]
+		else:
+			pad_body = StaticBody3D.new()
+			pad_body.name = "Pad_%02d" % (i + 1)
+			pad_body.collision_layer = 5 # WORLD (1) | OBSTACLE (4)
+			pad_body.collision_mask = 0
+			var mesh_inst: MeshInstance3D = MeshInstance3D.new()
+			mesh_inst.name = "MeshInstance3D"
+			var box_mesh: BoxMesh = BoxMesh.new()
+			box_mesh.material = _pad_material
+			mesh_inst.mesh = box_mesh
+			pad_body.add_child(mesh_inst)
+			var col_shape: CollisionShape3D = CollisionShape3D.new()
+			col_shape.name = "CollisionShape3D"
+			col_shape.shape = BoxShape3D.new()
+			pad_body.add_child(col_shape)
+			_pads_container.add_child(pad_body)
 
 		var side_sign: float = -1.0 if (i % 2 == 0) else 1.0
 		var x_pos: float = side_sign * lateral_offset if pad_count > 1 else 0.0
@@ -69,22 +85,8 @@ func _rebuild_obstacle() -> void:
 		var z_pos: float = -(gap_distance + pad_dimensions.z * 0.5 + float(i) * step_z)
 		pad_body.position = Vector3(x_pos, y_pos, z_pos)
 
-		var mesh_inst: MeshInstance3D = MeshInstance3D.new()
-		mesh_inst.name = "MeshInstance3D"
-		var box_mesh: BoxMesh = BoxMesh.new()
-		box_mesh.size = pad_dimensions
-		box_mesh.material = _pad_material
-		mesh_inst.mesh = box_mesh
-		pad_body.add_child(mesh_inst)
-
-		var col_shape: CollisionShape3D = CollisionShape3D.new()
-		col_shape.name = "CollisionShape3D"
-		var box_shape: BoxShape3D = BoxShape3D.new()
-		box_shape.size = pad_dimensions
-		col_shape.shape = box_shape
-		pad_body.add_child(col_shape)
-
-		_pads_container.add_child(pad_body)
+		(pad_body.get_node("MeshInstance3D").mesh as BoxMesh).size = pad_dimensions
+		(pad_body.get_node("CollisionShape3D").shape as BoxShape3D).size = pad_dimensions
 
 	var total_span: float = float(pad_count) * step_z + gap_distance
 	if entry_anchor != null:
@@ -99,9 +101,8 @@ func _rebuild_obstacle() -> void:
 		_hazard_zone.position = Vector3(0.0, -2.2, -total_span * 0.5)
 		var hz_col: CollisionShape3D = _hazard_zone.get_node_or_null("CollisionShape3D") as CollisionShape3D
 		if hz_col != null and hz_col.shape is BoxShape3D:
-			var hz_box: BoxShape3D = (hz_col.shape as BoxShape3D).duplicate() as BoxShape3D
+			var hz_box: BoxShape3D = hz_col.shape as BoxShape3D
 			hz_box.size = Vector3(maxf(10.0, pad_dimensions.x + lateral_offset * 2.0 + 4.0), 1.5, total_span + 2.0)
-			hz_col.shape = hz_box
 
 
 func _validate_parameters() -> bool:

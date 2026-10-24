@@ -78,6 +78,7 @@ func get_bob_local_y() -> float:
 
 func _rebuild_obstacle() -> void:
 	_cache_common_nodes()
+	_localize_geometry_resources()
 	if _pendulum_pivot == null:
 		_pendulum_pivot = get_node_or_null("PendulumPivot") as AnimatableBody3D
 	if _rod_mesh == null:
@@ -94,9 +95,8 @@ func _rebuild_obstacle() -> void:
 	if _rod_mesh != null:
 		_rod_mesh.position = Vector3(0.0, -pendulum_length * 0.5, 0.0)
 		if _rod_mesh.mesh is CylinderMesh:
-			var cm: CylinderMesh = (_rod_mesh.mesh as CylinderMesh).duplicate() as CylinderMesh
+			var cm: CylinderMesh = _rod_mesh.mesh as CylinderMesh
 			cm.height = pendulum_length
-			_rod_mesh.mesh = cm
 	if _bob_mesh != null:
 		_bob_mesh.position = Vector3(0.0, -pendulum_length, 0.0)
 	if _bob_col != null:

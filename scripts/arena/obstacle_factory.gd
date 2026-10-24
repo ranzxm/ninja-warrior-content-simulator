@@ -34,7 +34,7 @@ const OBSTACLE_COLORS: Dictionary = {
 const PARAMETER_DESCRIPTORS: Dictionary = {
 	"stepping_pads": [
 		{"key": "pad_count", "label": "Pad Count", "type": "int", "min": 1, "max": 12, "step": 1, "default": 4},
-		{"key": "pad_dimensions", "label": "Pad Size (X,Y,Z)", "type": "vec3", "min": 0.4, "max": 8.0, "step": 0.1, "default": [1.8, 0.4, 1.8]},
+		{"key": "pad_dimensions", "label": "Pad Size (X,Y,Z)", "type": "vec3", "min": 0.4, "max": 8.0, "axis_min": [0.4, 0.1, 0.4], "axis_max": [8.0, 4.0, 8.0], "step": 0.1, "default": [1.8, 0.4, 1.8]},
 		{"key": "gap_distance", "label": "Gap Distance (m)", "type": "float", "min": 0.2, "max": 4.0, "step": 0.1, "default": 0.8},
 		{"key": "height_variation", "label": "Height Var (m)", "type": "float", "min": -1.2, "max": 1.2, "step": 0.05, "default": 0.12},
 		{"key": "lateral_offset", "label": "Lateral Offset (m)", "type": "float", "min": 0.0, "max": 2.0, "step": 0.05, "default": 0.45},
@@ -49,7 +49,7 @@ const PARAMETER_DESCRIPTORS: Dictionary = {
 		{"key": "movement_speed", "label": "Move Speed (m/s)", "type": "float", "min": 0.1, "max": 15.0, "step": 0.25, "default": 2.4},
 		{"key": "travel_mode", "label": "Travel Mode", "type": "enum", "options": ["PING_PONG", "LOOP", "ONE_WAY"], "default": "PING_PONG"},
 		{"key": "initial_direction", "label": "Initial Dir", "type": "dir_int", "options": [-1, 1], "default": 1},
-		{"key": "platform_size", "label": "Platform Size", "type": "vec3", "min": 0.8, "max": 10.0, "step": 0.1, "default": [2.8, 0.4, 2.8]},
+		{"key": "platform_size", "label": "Platform Size", "type": "vec3", "min": 0.8, "max": 10.0, "axis_min": [0.8, 0.15, 0.8], "axis_max": [10.0, 4.0, 10.0], "step": 0.1, "default": [2.8, 0.4, 2.8]},
 	],
 	"rotating_sweeper": [
 		{"key": "rotation_speed", "label": "Rot Speed (rad/s)", "type": "float", "min": 0.1, "max": 10.0, "step": 0.1, "default": 1.6},

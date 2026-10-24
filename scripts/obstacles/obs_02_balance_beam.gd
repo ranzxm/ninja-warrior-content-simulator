@@ -42,6 +42,7 @@ func get_beam_collision_size() -> Vector3:
 
 func _rebuild_obstacle() -> void:
 	_cache_common_nodes()
+	_localize_geometry_resources()
 	if _beam_body == null:
 		_beam_body = get_node_or_null("BeamBody") as StaticBody3D
 	if _beam_mesh_inst == null:
@@ -53,13 +54,11 @@ func _rebuild_obstacle() -> void:
 	if _beam_body != null:
 		_beam_body.position = Vector3(0.0, -beam_height * 0.5, -beam_length * 0.5)
 	if _beam_mesh_inst != null and _beam_mesh_inst.mesh is BoxMesh:
-		var box_mesh: BoxMesh = (_beam_mesh_inst.mesh as BoxMesh).duplicate() as BoxMesh
+		var box_mesh: BoxMesh = _beam_mesh_inst.mesh as BoxMesh
 		box_mesh.size = dims
-		_beam_mesh_inst.mesh = box_mesh
 	if _beam_col_shape != null and _beam_col_shape.shape is BoxShape3D:
-		var box_shape: BoxShape3D = (_beam_col_shape.shape as BoxShape3D).duplicate() as BoxShape3D
+		var box_shape: BoxShape3D = _beam_col_shape.shape as BoxShape3D
 		box_shape.size = dims
-		_beam_col_shape.shape = box_shape
 
 	if entry_anchor != null:
 		entry_anchor.position = Vector3.ZERO
@@ -73,9 +72,8 @@ func _rebuild_obstacle() -> void:
 		_hazard_zone.position = Vector3(0.0, -2.2, -beam_length * 0.5)
 		var hz_col: CollisionShape3D = _hazard_zone.get_node_or_null("CollisionShape3D") as CollisionShape3D
 		if hz_col != null and hz_col.shape is BoxShape3D:
-			var hz_box: BoxShape3D = (hz_col.shape as BoxShape3D).duplicate() as BoxShape3D
+			var hz_box: BoxShape3D = hz_col.shape as BoxShape3D
 			hz_box.size = Vector3(maxf(10.0, beam_width + 6.0), 1.5, beam_length + 2.0)
-			hz_col.shape = hz_box
 
 
 func _validate_parameters() -> bool:

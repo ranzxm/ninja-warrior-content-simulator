@@ -90,6 +90,7 @@ func get_platform_collision_size() -> Vector3:
 
 func _rebuild_obstacle() -> void:
 	_cache_common_nodes()
+	_localize_geometry_resources()
 	if _platform_body == null:
 		_platform_body = get_node_or_null("PlatformBody") as AnimatableBody3D
 	if _mesh_inst == null:
@@ -98,13 +99,11 @@ func _rebuild_obstacle() -> void:
 		_col_shape = get_node_or_null("PlatformBody/CollisionShape3D") as CollisionShape3D
 
 	if _mesh_inst != null and _mesh_inst.mesh is BoxMesh:
-		var box_mesh: BoxMesh = (_mesh_inst.mesh as BoxMesh).duplicate() as BoxMesh
+		var box_mesh: BoxMesh = _mesh_inst.mesh as BoxMesh
 		box_mesh.size = platform_size
-		_mesh_inst.mesh = box_mesh
 	if _col_shape != null and _col_shape.shape is BoxShape3D:
-		var box_shape: BoxShape3D = (_col_shape.shape as BoxShape3D).duplicate() as BoxShape3D
+		var box_shape: BoxShape3D = _col_shape.shape as BoxShape3D
 		box_shape.size = platform_size
-		_col_shape.shape = box_shape
 
 	var total_span: float = platform_size.z + movement_distance + 0.6
 	if entry_anchor != null:
@@ -119,9 +118,8 @@ func _rebuild_obstacle() -> void:
 		_hazard_zone.position = Vector3(0.0, -2.2, -total_span * 0.5)
 		var hz_col: CollisionShape3D = _hazard_zone.get_node_or_null("CollisionShape3D") as CollisionShape3D
 		if hz_col != null and hz_col.shape is BoxShape3D:
-			var hz_box: BoxShape3D = (hz_col.shape as BoxShape3D).duplicate() as BoxShape3D
+			var hz_box: BoxShape3D = hz_col.shape as BoxShape3D
 			hz_box.size = Vector3(maxf(10.0, platform_size.x + 6.0), 1.5, total_span + 2.0)
-			hz_col.shape = hz_box
 
 
 func _on_reset_obstacle() -> void:

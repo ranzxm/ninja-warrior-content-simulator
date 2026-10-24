@@ -8,6 +8,7 @@ extends Node3D
 signal obstacle_entered(obstacle: ObstacleBase, player: PlayerController)
 signal obstacle_completed(obstacle: ObstacleBase, player: PlayerController)
 signal obstacle_hazard_hit(obstacle: ObstacleBase, player: PlayerController, reason: String)
+signal geometry_changed(obstacle: ObstacleBase)
 
 enum TraversalState {
 	NOT_STARTED,
@@ -61,6 +62,9 @@ var _entry_trigger: Area3D = null
 var _exit_trigger: Area3D = null
 var _hazard_zone: Area3D = null
 var _editor_pick_body: StaticBody3D = null
+var geometry_revision: int = 0
+var _geometry_resources_local: bool = false
+var _local_bounds: AABB = AABB()
 
 
 static func allocate_unique_instance_id() -> String:
@@ -91,6 +95,7 @@ func _ready() -> void:
 	_connect_triggers()
 	_rebuild_obstacle()
 	reset_obstacle()
+	_refresh_geometry_bounds()
 	_apply_enabled_state()
 
 
@@ -179,6 +184,12 @@ func get_exit_position() -> Vector3:
 
 
 func get_local_bounds_aabb() -> AABB:
+	if geometry_revision == 0:
+		_refresh_geometry_bounds()
+	return _local_bounds
+
+
+func _refresh_geometry_bounds() -> void:
 	_cache_common_nodes()
 	var entry_local: Vector3 = entry_anchor.position if entry_anchor != null else Vector3.ZERO
 	var exit_local: Vector3 = exit_anchor.position if exit_anchor != null else Vector3(0.0, 0.0, -6.0)
@@ -192,7 +203,48 @@ func get_local_bounds_aabb() -> AABB:
 		maxf(entry_local.y, exit_local.y) + 2.5,
 		maxf(entry_local.z, exit_local.z) + 0.5
 	)
-	return AABB(min_pt, max_pt - min_pt)
+	# Keep the traversal envelope; include every transformed visible mesh (wide pads,
+	# rotated slabs, tall pivots), without walking the tree on every ghost/pick query.
+	# ponytail: Bounds cover the reset/editor pose; refresh after external geometry edits,
+	# not every simulation tick. A swept envelope is needed for runtime moving picks.
+	_local_bounds = _merge_mesh_bounds(self, Transform3D.IDENTITY, AABB(min_pt, max_pt - min_pt))
+	geometry_revision += 1
+	_ensure_editor_pick_body()
+	geometry_changed.emit(self)
+
+
+func _merge_mesh_bounds(node: Node, local_transform: Transform3D, bounds: AABB) -> AABB:
+	if node != self and node is Node3D:
+		var spatial: Node3D = node as Node3D
+		if not spatial.visible:
+			return bounds
+		local_transform = local_transform * spatial.transform
+	if node is MeshInstance3D:
+		var mesh_instance: MeshInstance3D = node as MeshInstance3D
+		if mesh_instance.mesh != null:
+			bounds = bounds.merge(local_transform * mesh_instance.get_aabb())
+	for child: Node in node.get_children():
+		bounds = _merge_mesh_bounds(child, local_transform, bounds)
+	return bounds
+
+
+func _localize_geometry_resources() -> void:
+	if _geometry_resources_local:
+		return
+	# Scene subresources are shared between instances; copy once, then resize in place.
+	for node: Node in find_children("*", "", true, false):
+		if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+			(node as MeshInstance3D).mesh = (node as MeshInstance3D).mesh.duplicate() as Mesh
+		elif node is CollisionShape3D and (node as CollisionShape3D).shape != null:
+			(node as CollisionShape3D).shape = (node as CollisionShape3D).shape.duplicate() as Shape3D
+	_geometry_resources_local = true
+
+
+func _retire_geometry_node(node: Node) -> void:
+	_sync_collision_tree(node, false)
+	if node.get_parent() != null:
+		node.get_parent().remove_child(node)
+	node.queue_free()
 
 
 func validate_configuration() -> bool:
@@ -219,15 +271,32 @@ func get_parameters() -> Dictionary:
 func apply_parameters(params: Dictionary) -> bool:
 	if params == null or typeof(params) != TYPE_DICTIONARY:
 		return false
+	var previous: Dictionary = get_parameters().duplicate(true)
 	if not _apply_obstacle_parameters(params):
+		_apply_obstacle_parameters(previous)
 		return false
 	if not validate_configuration():
+		_apply_obstacle_parameters(previous)
 		return false
+	if get_parameters() == previous:
+		return true
+	var diagnostic: bool = "--editor-diagnostics" in OS.get_cmdline_user_args()
+	if diagnostic:
+		print("PARAMETER_EDIT id=%s type=%s attempted=%s validation=true rebuild_started=true rebuild_completed=false" % [instance_id, obstacle_type, str(params)])
+	stop_simulation()
 	_rebuild_obstacle()
-	_ensure_editor_pick_body()
 	reset_obstacle()
+	_refresh_geometry_bounds()
 	_apply_enabled_state()
+	if diagnostic:
+		print("PARAMETER_EDIT id=%s type=%s revision=%d validation=true rebuild_started=true rebuild_completed=true" % [instance_id, obstacle_type, geometry_revision])
 	return true
+
+
+## Physics signal callbacks must request changes here, outside the query flush.
+## apply_parameters remains synchronous for callers already at a safe boundary.
+func request_apply_parameters(params: Dictionary) -> void:
+	apply_parameters.call_deferred(params.duplicate(true))
 
 
 func _cache_common_nodes() -> void:
@@ -245,11 +314,6 @@ func _cache_common_nodes() -> void:
 
 func _ensure_editor_pick_body() -> void:
 	if not editor_mode_active:
-		if _editor_pick_body != null and is_instance_valid(_editor_pick_body):
-			if _editor_pick_body.get_parent() != null:
-				_editor_pick_body.get_parent().remove_child(_editor_pick_body)
-			_editor_pick_body.free()
-		_editor_pick_body = null
 		return
 
 	if _editor_pick_body == null or not is_instance_valid(_editor_pick_body):
