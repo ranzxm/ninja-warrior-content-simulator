@@ -21,6 +21,9 @@ func _initialize() -> void:
 
 
 func _process(_delta: float) -> bool:
+	if _main_node == null:
+		_finish()
+		return true
 	_frame_count += 1
 	if _frame_count < 2:
 		return false
@@ -74,7 +77,9 @@ func _process(_delta: float) -> bool:
 		_assert_true(player.global_position.distance_to(spawn_pos) < 0.05, "Restart must restore player to SpawnPoint")
 		_assert_true(player.velocity.length() < 0.001, "Restart must zero player velocity")
 
-	_main_node.queue_free()
+	root.remove_child(_main_node)
+	_main_node.free()
+	_main_node = null
 	_finish()
 	return true
 

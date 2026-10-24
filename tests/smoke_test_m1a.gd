@@ -69,7 +69,9 @@ func _physics_process(_delta: float) -> bool:
 
 	if _frame == 166:
 		_verify_warped_wall_physics_check()
-		_main_node.queue_free()
+		root.remove_child(_main_node)
+		_main_node.free()
+		_main_node = null
 		_finish()
 		return true
 
