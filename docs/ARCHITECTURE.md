@@ -1,4 +1,4 @@
-# ARCHITECTURE — Ninja Warrior Content Simulator (M0–M1a Stabilized)
+# ARCHITECTURE — Ninja Warrior Content Simulator (M0–M1b)
 
 ## 1. Struktur Direktori
 ```text
@@ -9,6 +9,9 @@ res://
 ├── scenes/
 │   ├── app/main.tscn
 │   ├── arenas/stage_01_demo.tscn
+│   ├── editor/
+│   │   ├── arena_editor_ui.tscn
+│   │   └── editor_camera.tscn
 │   ├── gameplay/
 │   │   ├── player.tscn
 │   │   └── prototype_arena.tscn
@@ -25,7 +28,15 @@ res://
 ├── scripts/
 │   ├── core/main.gd
 │   ├── competition/run_session.gd
-│   ├── arena/stage_demo_arena.gd
+│   ├── arena/
+│   │   ├── stage_demo_arena.gd
+│   │   ├── obstacle_factory.gd
+│   │   ├── arena_validator.gd
+│   │   ├── arena_serializer.gd
+│   │   └── arena_repository.gd
+│   ├── editor/
+│   │   ├── arena_editor.gd
+│   │   └── editor_camera.gd
 │   ├── gameplay/
 │   │   ├── player_controller.gd
 │   │   ├── third_person_camera.gd
@@ -44,46 +55,44 @@ res://
 ├── tests/
 │   ├── smoke_test_m0.gd
 │   ├── smoke_test_m1a.gd
-│   └── smoke_test_m1a_stabilization.gd
+│   ├── smoke_test_m1a_stabilization.gd
+│   └── smoke_test_m1b.gd
 └── docs/
     ├── SETUP.md
     ├── ARCHITECTURE.md
     ├── TEST_PLAN.md
     ├── IMPLEMENTATION_STATUS.md
-    └── M1A_STABILIZATION_REPORT.md
+    ├── M1A_STABILIZATION_REPORT.md
+    ├── ARENA_EDITOR_GUIDE.md
+    ├── ARENA_JSON_SCHEMA.md
+    └── M1B_IMPLEMENTATION_REPORT.md
 ```
 
-## 2. State Machine Kompetisi & Validasi Rute (`RunSession`)
+## 2. Mode Aplikasi (`PLAY` vs `EDIT`) & Siklus Pause
 
-`scripts/competition/run_session.gd` mengelola state otoritatif kompetisi dan urutan penyelesaian rintangan (`required_obstacle_ids`):
+- **`MainApp` (`scripts/core/main.gd`):** Mengelola transisi antara `AppMode.PLAY` dan `AppMode.EDIT` (`F2` atau tombol UI).
+  - Saat berpindah dari `PLAY` ke `EDIT` ketika `RunSession.state == RUNNING`, sistem meminta konfirmasi pengguna sebelum menghentikan run.
+  - Saat berpindah dari `EDIT` ke `PLAY` (`Test Play`), arena divalidasi terlebih dahulu oleh `ArenaValidator.validate_arena()`, rute berurutan dikirim ke `RunSession.configure_route()`, rintangan dinamis di-reset ke fase awal, dan player di-spawn pada `SpawnPoint` hasil edit tanpa menghilangkan status `is_dirty`.
+- **Pause-Aware Dynamic Lifecycle:** `StageDemoArena` dan `ObstacleBase` menggunakan `PROCESS_MODE_PAUSABLE` serta flag eksplisit `simulation_paused`. Saat permainan di-pause pada mode `RUNNING`, timer `RunSession` dan seluruh rintangan dinamis (`MovingPlatform`, `RotatingSweeper`, `SwingingPendulum`) berhenti tepat pada fase dan transform saat itu, lalu melanjutkan gerakan tanpa loncatan fase saat `Resume`.
 
-```text
-READY ──(StartGate)─────────────────────────────► RUNNING
-RUNNING ──(All required obstacles COMPLETED + FinishZone)──► FINISHED (STAGE CLEAR)
-RUNNING ──(FailZone / HazardZone)───────────────► FAILED
-RUNNING ──(elapsed >= time_limit)───────────────► TIMEOUT (TIME UP)
-FINISHED | FAILED | TIMEOUT ──(Retry)───────────► READY
-```
+## 3. Kontrak Identitas Rintangan (`obstacle_type` vs `instance_id`)
 
-- **State Traversal Rintangan:** Setiap instance rintangan mengikuti transisi `NOT_STARTED → ENTERED → COMPLETED`.
-  - Memasuki `EntryTrigger` hanya mengubah status rintangan menjadi `ENTERED` (`[IN PROGRESS]`), belum menambah jumlah rintangan selesai.
-  - Menyentuh `ExitTrigger` setelah `ENTERED` pada urutan rintangan yang benar mengubah status menjadi `COMPLETED` (`[CLEARED]`) dan menambah `completed_obstacle_ids`.
-- **Pencegahan Course Skipping:** `FinishZone` memanggil `RunSession.finish_run()` yang memvalidasi `can_finish_run()` (seluruh `required_obstacle_ids` harus aktif/enabled dan berstatus `COMPLETED` secara berurutan).
-- **Integritas `READY` & `StartGate`:** Hanya `StartGate` yang memulai `RUNNING`. Jika karakter jatuh sebelum melewati `StartGate`, karakter dikembalikan ke `SpawnPoint` dalam state `READY` tanpa memicu percobaan gagal palsu.
+- **`obstacle_type`:** Kategori rintangan (`stepping_pads`, `balance_beam`, `moving_platform`, `rotating_sweeper`, `swinging_pendulum`, `warped_wall`) yang dipetakan oleh whitelist `ObstacleFactory`.
+- **`instance_id`:** Identitas unik per objek yang ditempatkan di arena (`ob_000001`, `ob_000002`, ...), dialokasikan secara monotonik oleh `ObstacleBase.allocate_unique_instance_id()`. Properti `obstacle_id` dipertahankan sebagai alias yang disinkronkan dengan `instance_id`.
+- Beberapa instance dari tipe rintangan yang sama dapat ditempatkan dalam satu arena, disimpan ke JSON, dan dilacak progres penyelesaiannya secara independen oleh `RunSession`.
 
-## 3. Arsitektur Obstacle (`ObstacleBase` & Lifecycle Dinamis)
+## 4. Subsistem Arena Editor & Persistensi (`M1b`)
 
-Semua rintangan mewarisi `ObstacleBase` (`scripts/obstacles/obstacle_base.gd`):
-- **Aktivasi & Kolisi (`is_enabled`):** Saat `is_enabled == false`, `_sync_collision_tree()` menyimpan layer/mask asli pada metadata node lalu menonaktifkan seluruh `StaticBody3D`, `AnimatableBody3D`, `Area3D` (`monitoring = false`), dan `CollisionShape3D` (`disabled = true`), menghentikan simulasi gerak, serta menahan seluruh sinyal trigger/knockback. Saat `is_enabled == true`, konfigurasi kolisi dipulihkan secara utuh.
-- **Kontrak Parameter Atomik:** `get_parameters()` menghasilkan `Dictionary` kompatibel JSON, dan `apply_parameters()` memvalidasi whitelist key, tipe data, nilai finite, serta batas rentang sebelum menerapkan perubahan dan membangun ulang mesh, collider, anchor, serta trigger secara atomik.
-- **Siklus Simulasi Dinamis (`start_simulation` / `stop_simulation`):**
-  - `READY`: Reset ke fase awal dan diam (stationary).
-  - `RUNNING`: Bergerak normal pada `_physics_process`.
-  - `PAUSED`: Membeku pada fase saat ini.
-  - `FINISHED` / `FAILED` / `TIMEOUT`: Membeku pada fase akhir.
-  - `RETRY`: Reset kembali ke fase awal di `READY`.
+| Komponen | Lokasi | Tanggung Jawab |
+|---|---|---|
+| `ObstacleFactory` | `scripts/arena/obstacle_factory.gd` | Whitelist `obstacle_type -> PackedScene` dan tabel deskriptor parameter untuk pembangkitan inspector dinamis. |
+| `ArenaValidator` | `scripts/arena/arena_validator.gd` | Validasi struktur, batas dunia, keunikan `instance_id`, parameter rintangan, dan urutan `route` (memisahkan `errors` dari `warnings` geometris). |
+| `ArenaSerializer` | `scripts/arena/arena_serializer.gd` | Konversi `StageDemoArena` <-> `Dictionary` / JSON (`schema_version = 1`) dengan staging atomik saat load. |
+| `ArenaRepository` | `scripts/arena/arena_repository.gd` | Penyimpanan file `user://arenas/*.json` dengan proteksi path traversal, tulis-verifikasi `.tmp`, dan rotasi backup `.bak`. |
+| `EditorCamera` | `scripts/editor/editor_camera.gd` | Kamera orbital/pan/zoom khusus mode `EDIT` yang terpisah dari `ThirdPersonCamera`. |
+| `ArenaEditor` | `scripts/editor/arena_editor.gd` | UI & kontroler editor in-game: palet 6 rintangan, ghost preview, pemilihan raycast (`EDITOR_PICK`), transformasi XZ/rotasi Y, grid snapping, inspector parameter, duplikat/hapus, editor Spawn/Finish, pengurutan rute, serta undo/redo 25 langkah. |
 
-## 4. Konfigurasi Collision Layer & Mask
+## 5. Konfigurasi Collision Layer & Mask
 
 | Layer Bit | Nilai Mask | Nama Layer | Penggunaan |
 |---|---|---|---|
@@ -91,4 +100,4 @@ Semua rintangan mewarisi `ObstacleBase` (`scripts/obstacles/obstacle_base.gd`):
 | Layer 2 | `2` | `PLAYER` | `PlayerController` (`CharacterBody3D`) |
 | Layer 3 | `4` | `OBSTACLE` | Geometri kolisi rintangan modular |
 | Layer 4 | `8` | `TRIGGER` | `StartGate`, `FinishZone`, `FailZone`, `EntryTrigger`, `ExitTrigger`, `HazardZone` (`Area3D`) |
-| Layer 5 | `16` | `EDITOR_PICK` | Disiapkan untuk pemilihan objek di M1b |
+| Layer 5 | `16` | `EDITOR_PICK` | `_EditorPickBody` pada `ObstacleBase` (aktif hanya saat mode `EDIT` untuk raycast seleksi mouse) |

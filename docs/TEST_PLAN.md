@@ -1,4 +1,4 @@
-# TEST PLAN — Ninja Warrior Content Simulator (M0–M1a Stabilized)
+# TEST PLAN — Ninja Warrior Content Simulator (M0–M1b)
 
 ## 1. Pemeriksaan Otomatis (Headless CLI)
 
@@ -8,7 +8,7 @@ Dijalankan menggunakan binary resmi `Godot_v4.7.2-stable_win64_console.exe`:
    ```powershell
    Godot_v4.7.2-stable_win64_console.exe --headless --editor --path . --quit
    ```
-   - **Hasil:** **PASS** (Exit code `0`).
+   - **Hasil:** **PASS** (Exit code `0`, zero parse/resource errors).
 
 2. **Automated Smoke Test M0 (`tests/smoke_test_m0.gd`):**
    ```powershell
@@ -22,32 +22,31 @@ Dijalankan menggunakan binary resmi `Godot_v4.7.2-stable_win64_console.exe`:
    ```
    - **Hasil:** **PASS** (`SMOKE_TEST_M1A: PASS`, exit code `0`).
 
-4. **Stabilization & Regression Suite (`tests/smoke_test_m1a_stabilization.gd`):**
+4. **Stabilization & Regression Suite M1a (`tests/smoke_test_m1a_stabilization.gd`):**
    ```powershell
    Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/smoke_test_m1a_stabilization.gd
    ```
    - **Hasil:** **PASS** (`SMOKE_TEST_M1A_STABILIZATION: PASS (200 checks passed)`, exit code `0`).
-   - **Cakupan Grup A–F (44 Kasus Uji):**
-     - **Group A (1–8):** Siklus `READY`, `StartGate` tunggal, pemulihan jatuh saat `READY`, timer saat `RUNNING`/`PAUSED`/terminal, penolakan transisi invalid, dan retry dengan `run_id` baru.
-     - **Group B (9–16):** Pemisahan `ENTERED` (`[IN PROGRESS]`) vs `COMPLETED` (`[CLEARED]`), penolakan exit tanpa entry, penolakan duplikasi exit/re-entry, penolakan urutan loncat rintangan, penolakan `FinishZone` dini, penolakan finish jika rintangan wajib dinonaktifkan, dan penyelesaian penuh 6 rintangan berurutan.
-     - **Group C (17–21):** Penonaktifan (`is_enabled = false`) mematikan visual, simulasi, trigger `Area3D`, dan kolisi fisik (terverifikasi lewat `PhysicsDirectSpaceState3D.intersect_ray`), serta pemulihan penuh setelah siklus enable/disable berulang.
-     - **Group D (22–28):** Round-trip JSON (`get_parameters() -> JSON -> apply_parameters()`) untuk keenam tipe rintangan, penolakan tipe salah, nilai di luar batas, `NaN`, key tidak dikenal, jaminan pembaruan atomik tanpa mutasi parsial, serta konsistensi ukuran mesh, collider, dan anchor.
-     - **Group E (29–36):** Simulasi fisika multi-frame (`MovingPlatform` membawa player, `RotatingSweeper` dan `SwingingPendulum` mendorong player, `WarpedWall` dapat dinaiki ke `TopDeck`), pembekuan rintangan dinamis di `READY`/terminal, dan determinisme fase setelah reset.
-     - **Group F (37–44):** Regresi M0 (WASD relatif kamera, sprint, jump, clamp kamera, pause/resume, restart, clean feed `H`, dan ketersediaan `prototype_arena.tscn`).
 
-## 2. Checklist Validasi Manual Golden Path (12 Skenario Wajib)
+5. **In-Game Arena Editor & Persistence Suite M1b (`tests/smoke_test_m1b.gd`):**
+   ```powershell
+   Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/smoke_test_m1b.gd
+   ```
+   - **Hasil:** **PASS** (`SMOKE_TEST_M1B: PASS (156 checks passed)`, exit code `0`, zero leaked ObjectDB/RID instances).
+   - **Cakupan Grup A–F (60 Kasus Uji):**
+     - **Group A (1–8):** Pembekuan rintangan dinamis selama `SceneTree.paused` (diuji selama 15 frame fisika nyata), kelanjutan mulus saat resume tanpa loncatan fase, stabilitas siklus pause/resume berulang, alokasi `instance_id` unik (`ob_XXXXXX`), keunikan ID antar rintangan bertipe sama, pelestarian parameter saat duplikasi, dan regresi `Stage 01`.
+     - **Group B (9–16):** Inisialisasi arena baru (`create_new_arena`), penempatan keenam tipe rintangan, validitas geometri/kolisi, keunikan `instance_id`, persistensi perubahan posisi di memori, grid snapping `0.5m`, rotasi Y, dan pembaruan parameter via inspector.
+     - **Group C (17–24):** Resolusi `ObstacleBase` dari body anak dan raycast viewport 3D (`select_at_screen_position`), duplikasi independen, penghapusan rintangan, sinkronisasi `route` setelah penghapusan, pengeditan `SpawnPoint` & `FinishZone`, pengubahan urutan `route`, dan penolakan atomik nilai parameter invalid.
+     - **Group D (25–37):** Serialisasi JSON valid (`schema_version = 1`), penyimpanan ke `user://`, pemulihan penuh saat load (rintangan, transformasi, seluruh parameter, `is_enabled == false`, `instance_id`, urutan `route`, `SpawnPoint`, `FinishZone`), ketiadaan sinyal ganda setelah load, rotasi backup `.bak` pada penyimpanan kedua, dan kemandirian file `Save As`.
+     - **Group E (38–49):** Penolakan aman terhadap JSON rusak, tipe rintangan tak dikenal, duplikasi `instance_id`, versi schema tidak didukung, nilai `NaN`/`INF`, transformasi di luar batas dunia, hilangnya `spawn`/`finish`, referensi `route` palsu/duplikat, ukuran payload `> 512 KB`, pelestarian arena aktif saat gagal load, pelestarian file valid saat gagal save, dan pemblokiran path traversal (`../`).
+     - **Group F (50–60):** Transisi arena kustom ke `PLAY` mode (`Test Play`), spawn player di `SpawnPoint` kustom, pengiriman rute kustom ke `RunSession`, pemicu `StartGate`, pelacakan terpisah untuk beberapa instance bertipe sama (`MovingPlatform` A vs C), penolakan finish dini, penyelesaian penuh menuju `STAGE CLEAR`, kegagalan `FAILED`, reset `Retry`, dan pelestarian tata letak/flag `is_dirty` saat kembali ke mode `EDIT`.
 
-Status eksekusi GUI oleh manusia saat ini: **NOT RUN** (wajib dijalankan secara interaktif di jendela Godot 4.7.2).
+## 2. Skenario Validasi Manual GUI (M1b Acceptance Scenarios)
 
-1. **Skenario 1 — Full Course Completion:** Mulai dari `SpawnPoint` -> lewati `StartGate` -> selesaikan `Stepping Pads` (1/6) -> `Balance Beam` (2/6) -> `Moving Platform` (3/6) -> `Rotating Sweeper` (4/6) -> `Swinging Pendulum` (5/6) -> `Warped Wall` (6/6) -> masuk `FinishZone` -> pastikan muncul `STAGE CLEAR` dan `COMPLETED: 6/6`.
-2. **Skenario 2 — Fail on Stepping Pads:** Lompat meleset di antara pad biru -> pastikan status berubah ke `FAILED` (`Fell at Stepping Pads`) dan karakter tidak langsung di-respawn.
-3. **Skenario 3 — Fail on Balance Beam:** Jatuh dari samping balok keseimbangan -> pastikan status berubah ke `FAILED` (`Fell at Balance Beam`).
-4. **Skenario 4 — Dynamic Obstacle Displacement:** Berdiri diam di jalur `Rotating Sweeper` dan `Swinging Pendulum` saat `RUNNING` -> pastikan karakter terdorong oleh lengan sweeper / bandul.
-5. **Skenario 5 — Warped Wall Summit:** Tahan `Left Shift + W` pada landasan Warped Wall dan lompat (`Space`) di kurva atas -> pastikan mendarat di `TopDeck` emas dan HUD menampilkan `OBSTACLE: Warped Wall [CLEARED]` (`COMPLETED: 6/6`).
-6. **Skenario 6 — Retry After Failure:** Setelah `FAILED`, tekan `R` atau klik tombol `Retry (R)` -> pastikan state kembali ke `READY`, timer `00:00.000`, `COMPLETED: 0/6`, dan posisi rintangan dinamis ter-reset.
-7. **Skenario 7 — Retry After Victory:** Setelah `STAGE CLEAR`, tekan `R` atau klik `Retry (R)` -> pastikan kembali ke `READY` dengan `run_id` baru.
-8. **Skenario 8 — Early FinishZone Rejection:** Lompati/lewati rintangan tanpa menyentuh `ExitTrigger` semua 6 rintangan lalu masuk `FinishZone` -> pastikan `STAGE CLEAR` ditolak karena `COMPLETED < 6/6`.
-9. **Skenario 9 — Pause During Moving Obstacle:** Tekan `Esc` saat `Moving Platform`, `Sweeper`, atau `Pendulum` bergerak -> pastikan seluruh rintangan dan timer berhenti tepat di posisinya.
-10. **Skenario 10 — Resume Without Phase Discontinuity:** Klik `Resume` atau tekan `Esc` kembali -> pastikan rintangan melanjutkan gerakan dari posisi terakhir tanpa loncatan fase.
-11. **Skenario 11 — Clean Feed (`H`):** Tekan `H` saat bermain maupun saat panel hasil tampil -> pastikan HUD/overlay tersembunyi tanpa mengubah timer atau state kompetisi.
-12. **Skenario 12 — Timer & Completion Count Accuracy:** Pastikan memasuki rintangan hanya menampilkan `[IN PROGRESS]` tanpa menambah angka `COMPLETED`, dan melewati ujung keluar rintangan mengubahnya menjadi `[CLEARED]` serta menambah `COMPLETED` tepat +1.
+Status eksekusi interaktif oleh operator manusia di GUI: **NOT RUN** (prosedur siap dijalankan di jendela Godot 4.7.2).
+
+- **Scenario 1 — Build:** Buka game -> tekan `F2` (`EDIT`) -> klik `New` -> tempatkan keenam tipe rintangan -> geser dan putar beberapa rintangan -> ubah parameter di Inspector -> duplikat `MovingPlatform` (`Ctrl+D`) -> hapus satu rintangan (`Delete`) -> ubah `SpawnPoint` & `FinishZone` -> ubah urutan rute (`Move Up`/`Move Down`) -> klik `Validate`.
+- **Scenario 2 — Save/Load:** Simpan sebagai `custom_stage_01` -> tutup aplikasi -> jalankan ulang -> tekan `F2` -> klik `Open / Save As` -> muat `custom_stage_01` -> pastikan seluruh tipe, posisi, rotasi, parameter, dan urutan rute identik.
+- **Scenario 3 — Test Play:** Muat arena kustom -> klik `Test Play (F2)` -> mulai dari `SpawnPoint` -> lewati rintangan -> pastikan timer dan progres bekerja -> picu `STAGE CLEAR` atau `FAILED` -> tekan `R` (`Retry`) -> tekan `F2` untuk kembali ke `EDIT` tanpa kehilangan arena.
+- **Scenario 4 — Duplicate Types:** Tambahkan 3 `MovingPlatform` dengan kecepatan berbeda di posisi berbeda -> simpan dan muat ulang -> pastikan ketiganya memiliki `instance_id` berbeda dan melacak progres `1/3`, `2/3`, `3/3` secara terpisah.
+- **Scenario 5 — Corrupt Data:** Siapkan file JSON rusak di `user://arenas/` -> coba muat lewat editor -> pastikan pesan error tampil jelas, arena aktif tidak rusak, dan aplikasi tidak crash.

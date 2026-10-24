@@ -1,4 +1,4 @@
-# SETUP — Ninja Warrior Content Simulator (M0–M1a Stabilized)
+# SETUP — Ninja Warrior Content Simulator (M0–M1b)
 
 ## 1. Prasyarat
 - **Engine:** Godot **4.7.2 stable** (Standard GDScript edition, Windows 64-bit).
@@ -8,8 +8,8 @@
 ## 2. Membuka dan Menjalankan Proyek di Godot Editor
 1. Buka **Godot 4.7.2**.
 2. Klik **Import** pada Project Manager, arahkan ke file `project.godot` di root repository ini, lalu klik **Import & Edit**.
-3. Tekan **F5** (atau tombol **Run Project**) untuk menjalankan `res://scenes/app/main.tscn` yang memuat lintasan kompetisi **Stage 01 — Ninja Course Demo** (`res://scenes/arenas/stage_01_demo.tscn`).
-4. Scene prototipe awal M0 (`res://scenes/gameplay/prototype_arena.tscn`) tetap tersedia untuk uji regresi.
+3. Tekan **F5** (atau tombol **Run Project**) untuk menjalankan `res://scenes/app/main.tscn`.
+4. Tekan **`F2`** (atau klik **`Edit Arena (F2)`** pada HUD) kapan saja untuk membuka **In-Game Arena Editor**.
 
 ## 3. Menjalankan Pemeriksaan & Pengujian lewat Command Line (CLI)
 ```powershell
@@ -25,18 +25,34 @@ Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/smoke_t
 # Menjalankan automated smoke & physics test M1a
 Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/smoke_test_m1a.gd
 
-# Menjalankan suite stabilisasi & regresi M1a (Groups A-F, 200 checks)
+# Menjalankan suite stabilisasi & regresi M1a (200 checks)
 Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/smoke_test_m1a_stabilization.gd
+
+# Menjalankan suite automated test M1b Arena Editor & Persistence (156 checks)
+Godot_v4.7.2-stable_win64_console.exe --headless --path . -s res://tests/smoke_test_m1b.gd
 ```
 
-## 4. Shortcut Keyboard & Mouse (M0–M1a)
+## 4. Shortcut Keyboard & Mouse (Mode PLAY & Mode EDIT)
 
-| Input | Action Name | Fungsi |
+| Konteks | Input | Fungsi |
 |---|---|---|
-| `W / A / S / D` | `move_forward`, `move_left`, `move_backward`, `move_right` | Pergerakan karakter relatif arah kamera |
-| `Mouse Move` | *(Mouse Motion)* | Orbit kamera horizontal & vertikal |
-| `Space` | `jump` | Melompat (hanya saat berada di permukaan lantai/platform) |
-| `Left Shift` | `sprint` | Berlari cepat (sprint) |
-| `R` | `restart` | Retry / Reset seluruh sesi kompetisi, timer, rintangan, dan karakter ke `READY` |
-| `H` | `toggle_hud` | Clean Feed: sembunyikan/tampilkan seluruh HUD, timer, dan panel hasil tanpa mengubah state kompetisi |
-| `Esc` | `pause` | Membuka/menutup Pause Menu dan melepas/menangkap kursor mouse |
+| Global | `F2` | Toggle antara mode `PLAY` dan mode `EDIT` (In-Game Arena Editor) |
+| Gameplay (`PLAY`) | `W / A / S / D` | Pergerakan karakter relatif arah kamera |
+| Gameplay (`PLAY`) | `Mouse Move` | Orbit kamera third-person |
+| Gameplay (`PLAY`) | `Space` | Melompat |
+| Gameplay (`PLAY`) | `Left Shift` | Sprint |
+| Gameplay (`PLAY`) | `R` | Retry / Reset sesi kompetisi ke `READY` |
+| Gameplay (`PLAY`) | `H` | Clean Feed: sembunyikan/tampilkan HUD untuk rekaman OBS |
+| Gameplay (`PLAY`) | `Esc` | Buka/tutup Pause Menu |
+| Editor (`EDIT`) | `Left Click` | Pilih rintangan di viewport 3D / tempatkan rintangan saat mode placement |
+| Editor (`EDIT`) | `Shift + Left Drag` | Geser rintangan terpilih pada bidang XZ |
+| Editor (`EDIT`) | `Right Mouse Drag` | Orbit kamera editor |
+| Editor (`EDIT`) | `Middle Mouse Drag` | Pan kamera editor |
+| Editor (`EDIT`) | `Mouse Wheel` | Zoom kamera editor |
+| Editor (`EDIT`) | `F` | Fokuskan kamera editor ke rintangan terpilih |
+| Editor (`EDIT`) | `Q / E` | Putar rintangan terpilih `-15°` / `+15°` pada sumbu Y |
+| Editor (`EDIT`) | `Ctrl + D` | Duplikat rintangan terpilih dengan `instance_id` baru |
+| Editor (`EDIT`) | `Delete` | Hapus rintangan terpilih |
+| Editor (`EDIT`) | `Ctrl + S` | Simpan arena ke `user://arenas/<arena_id>.json` |
+| Editor (`EDIT`) | `Ctrl + Z / Ctrl + Y` | Undo / Redo (hingga 25 langkah) |
+| Editor (`EDIT`) | `Esc` | Batalkan mode placement / tutup dialog file |
