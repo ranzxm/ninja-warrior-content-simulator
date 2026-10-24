@@ -4,11 +4,13 @@ extends Control
 ## Competition & gameplay HUD displaying stage, run state, timer, obstacle status, completed count, and result overlay.
 
 signal retry_requested()
+signal edit_mode_requested()
 
 @onready var _title_label: Label = get_node_or_null("MarginContainer/VBoxContainer/TopBar/TitleLabel") as Label
 @onready var _stage_label: Label = get_node_or_null("MarginContainer/VBoxContainer/TopBar/StageLabel") as Label
 @onready var _mode_label: Label = get_node_or_null("MarginContainer/VBoxContainer/TopBar/ModeLabel") as Label
 @onready var _state_label: Label = get_node_or_null("MarginContainer/VBoxContainer/TopBar/StateLabel") as Label
+@onready var _edit_button: Button = get_node_or_null("MarginContainer/VBoxContainer/TopBar/EditArenaButton") as Button
 
 @onready var _run_state_label: Label = get_node_or_null("MarginContainer/VBoxContainer/CompetitionBar/RunStateLabel") as Label
 @onready var _timer_label: Label = get_node_or_null("MarginContainer/VBoxContainer/CompetitionBar/TimerLabel") as Label
@@ -27,6 +29,8 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if _retry_button != null and not _retry_button.pressed.is_connected(_on_retry_button_pressed):
 		_retry_button.pressed.connect(_on_retry_button_pressed)
+	if _edit_button != null and not _edit_button.pressed.is_connected(_on_edit_button_pressed):
+		_edit_button.pressed.connect(_on_edit_button_pressed)
 	set_mode_text("PLAY")
 	set_player_state_text("IDLE")
 	set_run_state_text("READY")
@@ -167,3 +171,7 @@ func get_completed_text() -> String:
 
 func _on_retry_button_pressed() -> void:
 	retry_requested.emit()
+
+
+func _on_edit_button_pressed() -> void:
+	edit_mode_requested.emit()

@@ -1,23 +1,35 @@
 class_name MainApp
 extends Node3D
 
-## Root coordinator for M1a competition lifecycle, ordered route validation, dynamic obstacle simulation,
-## HUD/result synchronization, and pause/retry flow.
+## Root coordinator for M1a/M1b competition lifecycle, PLAY/EDIT mode switching,
+## ordered route validation, pause-aware dynamic obstacle simulation, and HUD/Editor synchronization.
 
 signal session_restarted()
 signal pause_toggled(is_paused: bool)
+signal mode_changed(new_mode: AppMode, mode_name: String)
+
+enum AppMode {
+	PLAY,
+	EDIT,
+}
 
 @export var arena_path: NodePath = NodePath("Stage01Demo")
 @export var player_path: NodePath = NodePath("Player")
+@export var editor_camera_path: NodePath = NodePath("EditorCamera")
 @export var hud_path: NodePath = NodePath("UILayer/GameplayHud")
+@export var editor_ui_path: NodePath = NodePath("UILayer/ArenaEditor")
 @export var pause_menu_path: NodePath = NodePath("UILayer/PauseMenu")
 
 var run_session: RunSession = RunSession.new()
+var app_mode: AppMode = AppMode.PLAY
 var _is_paused: bool = false
+var _confirm_stop_run_dialog: ConfirmationDialog = null
 
 @onready var _arena: Node3D = _resolve_arena_node()
 @onready var _player: PlayerController = get_node_or_null(player_path) as PlayerController
+@onready var _editor_camera: EditorCamera = get_node_or_null(editor_camera_path) as EditorCamera
 @onready var _hud: GameplayHud = get_node_or_null(hud_path) as GameplayHud
+@onready var _editor: ArenaEditor = get_node_or_null(editor_ui_path) as ArenaEditor
 @onready var _pause_menu: PauseMenu = get_node_or_null(pause_menu_path) as PauseMenu
 
 
@@ -31,8 +43,16 @@ func _ready() -> void:
 		if not _player.state_changed.is_connected(_on_player_state_changed):
 			_player.state_changed.connect(_on_player_state_changed)
 
-	if _hud != null and not _hud.retry_requested.is_connected(restart_session):
-		_hud.retry_requested.connect(restart_session)
+	if _hud != null:
+		if not _hud.retry_requested.is_connected(restart_session):
+			_hud.retry_requested.connect(restart_session)
+		if not _hud.edit_mode_requested.is_connected(_on_hud_edit_mode_requested):
+			_hud.edit_mode_requested.connect(_on_hud_edit_mode_requested)
+
+	if _editor != null and _arena is StageDemoArena:
+		_editor.setup(_arena as StageDemoArena, _editor_camera)
+		if not _editor.test_play_requested.is_connected(enter_play_mode):
+			_editor.test_play_requested.connect(enter_play_mode)
 
 	if _pause_menu != null:
 		if not _pause_menu.resume_requested.is_connected(_on_resume_requested):
@@ -42,10 +62,13 @@ func _ready() -> void:
 		if not _pause_menu.quit_requested.is_connected(quit_application):
 			_pause_menu.quit_requested.connect(quit_application)
 
+	_ensure_confirm_stop_run_dialog()
 	restart_session()
 
 
 func _physics_process(delta: float) -> void:
+	if app_mode != AppMode.PLAY:
+		return
 	run_session.tick(delta, _is_paused)
 	if _is_paused or run_session.is_terminal():
 		return
@@ -58,6 +81,17 @@ func _physics_process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("toggle_editor"):
+		if app_mode == AppMode.PLAY:
+			enter_edit_mode(false)
+		else:
+			enter_play_mode()
+		get_viewport().set_input_as_handled()
+		return
+
+	if app_mode != AppMode.PLAY:
+		return
+
 	if event.is_action_pressed("pause"):
 		toggle_pause()
 		get_viewport().set_input_as_handled()
@@ -70,6 +104,86 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+func enter_edit_mode(force_stop_run: bool = false) -> bool:
+	if app_mode == AppMode.EDIT:
+		return true
+
+	if run_session.state == RunSession.RunState.RUNNING and not force_stop_run:
+		if _confirm_stop_run_dialog != null:
+			_confirm_stop_run_dialog.popup_centered()
+		return false
+
+	set_paused(false)
+	app_mode = AppMode.EDIT
+
+	if _arena is StageDemoArena:
+		var stage_arena: StageDemoArena = _arena as StageDemoArena
+		stage_arena.stop_obstacles_simulation()
+		stage_arena.reset_all_obstacles()
+		stage_arena.set_editor_mode(true)
+		run_session.reset_to_ready(stage_arena.time_limit_sec, stage_arena.get_obstacle_count())
+
+	if _player != null:
+		_player.controls_enabled = false
+		_player.velocity = Vector3.ZERO
+		_player.visible = false
+		var p_cam: ThirdPersonCamera = _player.get_camera_rig()
+		if p_cam != null:
+			p_cam.release_mouse()
+			if p_cam.get_camera() != null:
+				p_cam.get_camera().current = false
+
+	if _hud != null:
+		_hud.hide_result()
+		_hud.visible = false
+
+	if _editor_camera != null:
+		_editor_camera.set_active(true)
+
+	if _editor != null:
+		_editor.set_editor_active(true)
+
+	mode_changed.emit(app_mode, "EDIT")
+	return true
+
+
+func enter_play_mode() -> bool:
+	if app_mode == AppMode.PLAY:
+		return true
+
+	if _editor != null:
+		var report: Dictionary = _editor.validate_current_arena(true)
+		if not bool(report.get("valid", false)):
+			return false
+
+	var preserved_dirty: bool = _editor.is_dirty if _editor != null else false
+
+	app_mode = AppMode.PLAY
+	if _editor != null:
+		_editor.set_editor_active(false)
+		_editor.is_dirty = preserved_dirty
+
+	if _editor_camera != null:
+		_editor_camera.set_active(false)
+
+	if _arena is StageDemoArena:
+		(_arena as StageDemoArena).set_editor_mode(false)
+
+	if _player != null:
+		_player.visible = true
+		var p_cam: ThirdPersonCamera = _player.get_camera_rig()
+		if p_cam != null and p_cam.get_camera() != null:
+			p_cam.get_camera().current = true
+
+	if _hud != null:
+		_hud.visible = true
+		_hud.set_mode_text("PLAY")
+
+	restart_session()
+	mode_changed.emit(app_mode, "PLAY")
+	return true
+
+
 func restart_session() -> void:
 	set_paused(false)
 	if _hud != null:
@@ -79,6 +193,7 @@ func restart_session() -> void:
 	var obstacle_count: int = 0
 	if _arena is StageDemoArena:
 		var stage_arena: StageDemoArena = _arena as StageDemoArena
+		stage_arena.set_editor_mode(app_mode == AppMode.EDIT)
 		stage_arena.reset_all_obstacles()
 		time_limit = stage_arena.time_limit_sec
 		obstacle_count = stage_arena.get_obstacle_count()
@@ -103,9 +218,10 @@ func respawn_player() -> void:
 	if _arena != null and _arena.has_method("get_spawn_transform"):
 		spawn_xform = _arena.call("get_spawn_transform")
 	_player.reset_to_transform(spawn_xform)
-	_player.controls_enabled = not _is_paused
+	_player.visible = (app_mode == AppMode.PLAY)
+	_player.controls_enabled = (app_mode == AppMode.PLAY) and (not _is_paused)
 	var cam_rig: ThirdPersonCamera = _player.get_camera_rig()
-	if cam_rig != null and not _is_paused:
+	if cam_rig != null and app_mode == AppMode.PLAY and not _is_paused:
 		cam_rig.capture_mouse()
 	if _hud != null:
 		_hud.set_player_state_text(_player.get_state_name())
@@ -120,16 +236,19 @@ func set_paused(paused_state: bool) -> void:
 	if is_inside_tree():
 		get_tree().paused = _is_paused
 
+	if _arena is StageDemoArena:
+		(_arena as StageDemoArena).set_obstacles_paused(_is_paused)
+
 	if _pause_menu != null:
 		_pause_menu.set_open(_is_paused)
 
-	if _hud != null:
+	if _hud != null and app_mode == AppMode.PLAY:
 		_hud.set_mode_text("PAUSED" if _is_paused else "PLAY")
 
 	if _player != null:
-		_player.controls_enabled = (not _is_paused) and (not run_session.is_terminal())
+		_player.controls_enabled = (app_mode == AppMode.PLAY) and (not _is_paused) and (not run_session.is_terminal())
 		var cam_rig: ThirdPersonCamera = _player.get_camera_rig()
-		if cam_rig != null:
+		if cam_rig != null and app_mode == AppMode.PLAY:
 			if _is_paused or run_session.is_terminal():
 				cam_rig.release_mouse()
 			else:
@@ -142,6 +261,10 @@ func is_paused() -> bool:
 	return _is_paused
 
 
+func get_app_mode() -> AppMode:
+	return app_mode
+
+
 func get_run_session() -> RunSession:
 	return run_session
 
@@ -152,6 +275,14 @@ func get_player() -> PlayerController:
 
 func get_arena() -> Node3D:
 	return _arena
+
+
+func get_editor() -> ArenaEditor:
+	return _editor
+
+
+func get_editor_camera() -> EditorCamera:
+	return _editor_camera
 
 
 func get_hud() -> GameplayHud:
@@ -169,6 +300,23 @@ func quit_application() -> void:
 		_player.get_camera_rig().release_mouse()
 	if is_inside_tree():
 		get_tree().quit()
+
+
+func _ensure_confirm_stop_run_dialog() -> void:
+	if _confirm_stop_run_dialog != null:
+		return
+	var ui_layer: Node = get_node_or_null("UILayer")
+	if ui_layer == null:
+		return
+	_confirm_stop_run_dialog = ConfirmationDialog.new()
+	_confirm_stop_run_dialog.title = "Stop Active Run?"
+	_confirm_stop_run_dialog.dialog_text = "A competition run is currently in progress. Stop the run and enter EDIT mode?"
+	_confirm_stop_run_dialog.confirmed.connect(func() -> void: enter_edit_mode(true))
+	ui_layer.add_child(_confirm_stop_run_dialog)
+
+
+func _on_hud_edit_mode_requested() -> void:
+	enter_edit_mode(false)
 
 
 func _resolve_arena_node() -> Node3D:
@@ -209,51 +357,54 @@ func _connect_arena_signals() -> void:
 
 
 func _on_start_gate_crossed(_body: PlayerController) -> void:
+	if app_mode != AppMode.PLAY:
+		return
 	if run_session.state == RunSession.RunState.READY:
 		run_session.start_run()
 
 
 func _on_finish_zone_reached(_body: PlayerController) -> void:
-	if run_session.state != RunSession.RunState.RUNNING:
+	if app_mode != AppMode.PLAY or run_session.state != RunSession.RunState.RUNNING:
 		return
 	if _arena is StageDemoArena:
 		var stage_arena: StageDemoArena = _arena as StageDemoArena
 		for obs: ObstacleBase in stage_arena.get_obstacles():
-			run_session.set_obstacle_enabled(obs.obstacle_id, obs.is_enabled)
+			run_session.set_obstacle_enabled(obs.get_obstacle_instance_id(), obs.is_enabled)
 	run_session.finish_run()
 
 
 func _on_stage_player_fell(_body: PlayerController, reason: String, obstacle_id: String) -> void:
-	if not _is_paused:
+	if app_mode == AppMode.PLAY and not _is_paused:
 		_handle_player_fall(reason, obstacle_id)
 
 
 func _on_prototype_player_fell(_body: Node3D) -> void:
-	if not _is_paused:
+	if app_mode == AppMode.PLAY and not _is_paused:
 		_handle_player_fall("Fell into Prototype Hazard", "")
 
 
 func _on_stage_obstacle_entered(obstacle: ObstacleBase, _index: int, _total: int) -> void:
-	if run_session.state != RunSession.RunState.RUNNING or not obstacle.is_enabled:
+	if app_mode != AppMode.PLAY or run_session.state != RunSession.RunState.RUNNING or not obstacle.is_enabled:
 		return
-	run_session.set_obstacle_enabled(obstacle.obstacle_id, obstacle.is_enabled)
-	if run_session.record_obstacle_entered(obstacle.obstacle_id, obstacle.display_name, obstacle.is_enabled):
+	var inst_id: String = obstacle.get_obstacle_instance_id()
+	run_session.set_obstacle_enabled(inst_id, obstacle.is_enabled)
+	if run_session.record_obstacle_entered(inst_id, obstacle.display_name, obstacle.is_enabled):
 		obstacle.mark_entered()
 
 
 func _on_stage_obstacle_completed(obstacle: ObstacleBase, _index: int, _total: int) -> void:
-	if run_session.state != RunSession.RunState.RUNNING or not obstacle.is_enabled:
+	if app_mode != AppMode.PLAY or run_session.state != RunSession.RunState.RUNNING or not obstacle.is_enabled:
 		return
-	run_session.set_obstacle_enabled(obstacle.obstacle_id, obstacle.is_enabled)
-	if run_session.record_obstacle_completed(obstacle.obstacle_id, obstacle.display_name, obstacle.is_enabled):
+	var inst_id: String = obstacle.get_obstacle_instance_id()
+	run_session.set_obstacle_enabled(inst_id, obstacle.is_enabled)
+	if run_session.record_obstacle_completed(inst_id, obstacle.display_name, obstacle.is_enabled):
 		obstacle.mark_completed()
 
 
 func _handle_player_fall(reason: String, obstacle_id: String) -> void:
-	if run_session.is_terminal():
+	if app_mode != AppMode.PLAY or run_session.is_terminal():
 		return
 	if run_session.state == RunSession.RunState.READY:
-		# Safe recovery in READY without creating a fake RUNNING -> FAILED attempt
 		respawn_player()
 		return
 	run_session.fail_run(reason, obstacle_id)
@@ -264,7 +415,7 @@ func _on_run_state_changed(new_state: RunSession.RunState, state_name: String) -
 		_hud.set_run_state_text(state_name)
 	if _arena is StageDemoArena:
 		var stage_arena: StageDemoArena = _arena as StageDemoArena
-		if new_state == RunSession.RunState.RUNNING:
+		if new_state == RunSession.RunState.RUNNING and app_mode == AppMode.PLAY:
 			stage_arena.start_obstacles_simulation()
 		else:
 			stage_arena.stop_obstacles_simulation()

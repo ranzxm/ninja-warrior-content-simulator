@@ -56,6 +56,10 @@ text = "MODE: PLAY"
 layout_mode = 2
 text = "STATE: IDLE"
 
+[node name="EditArenaButton" type="Button" parent="MarginContainer/VBoxContainer/TopBar"]
+layout_mode = 2
+text = "Edit Arena (F2)"
+
 [node name="CompetitionBar" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 mouse_filter = 2
@@ -92,7 +96,7 @@ mouse_filter = 2
 
 [node name="ControlsLabel" type="Label" parent="MarginContainer/VBoxContainer/BottomBar"]
 layout_mode = 2
-text = "WASD: Move | Left Shift: Sprint | Space: Jump | Mouse: Orbit | R: Retry | H: Hide HUD | Esc: Pause"
+text = "WASD: Move | Shift: Sprint | Space: Jump | Mouse: Orbit | R: Retry | F2: Edit Arena | H: Hide HUD | Esc: Pause"
 
 [node name="ResultOverlay" type="Control" parent="."]
 visible = false
